@@ -281,6 +281,26 @@ class Display:
             size = cv2.getTextSize(label, FONT, 1.4, 3)[0]
             _text(panel, label, (center[0] - size[0] // 2, center[1] + size[1] // 2), 1.4, WHITE, 3)
 
+    def _menu(self, frame, items):
+        """The exercise list, large, over the camera image."""
+        h, w = frame.shape[:2]
+        top, bottom = 90, h - 150
+        _band(frame, top - 10, bottom + 10, 0.7)
+        row = int(min(72, (bottom - top) / max(1, len(items))))
+        scale = row / 55
+        for i, item in enumerate(items):
+            y = top + i * row
+            if item["selected"]:
+                cv2.rectangle(frame, (30, y + 4), (w - 30, y + row - 4), CYAN, -1)
+            color = BLACK if item["selected"] else WHITE
+            base = y + int(row * 0.7)
+            _text(frame, item["key"], (60, base), scale, YELLOW if not item["selected"] else BLACK, 3)
+            _text(frame, item["text"], (60 + int(70 * scale), base), scale, color, 2)
+            if item.get("note"):
+                size = cv2.getTextSize(item["note"], FONT, scale * 0.7, 1)[0]
+                _text(frame, item["note"], (w - 60 - size[0], base), scale * 0.7,
+                      BLACK if item["selected"] else GREY, 1)
+
     # --- whole screen -------------------------------------------------------
 
     def render(self, frame, view, features=None):
@@ -289,6 +309,8 @@ class Display:
         ex = view.get("exercise_display") or {}
 
         self.draw_hand(frame, features, ex.get("finger_colors"))
+        if view.get("menu"):
+            self._menu(frame, view["menu"])
 
         # title and counters
         _wrapped(panel, view.get("title", ""), 20, 45, PANEL_W - 40, 1.0, WHITE, 2)

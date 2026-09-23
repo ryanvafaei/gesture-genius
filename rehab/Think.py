@@ -10,11 +10,15 @@ Coach
   * logs every repetition and notices fatigue.
 
 SessionManager
-  greeting -> for each exercise: introduction -> calibration check
-  (calibrate, or offer a quick recalibration) -> sets with rests ->
-  summary compared with earlier sessions.
+  greeting -> menu (one exercise, or all of today's) -> for each exercise:
+  introduction -> calibration check (calibrate, or offer a quick
+  recalibration) -> sets with rests -> summary compared with earlier
+  sessions -> back to the menu.
+  When the exercises are given up front (--exercise) there is no menu.
 
-One key does everything: space starts, pauses and continues.
+One key does everything: space starts, pauses and continues. In the menu
+a number picks an exercise and up/down move the highlight; m goes back to
+the menu from anywhere.
 """
 
 from rehab import config
@@ -31,6 +35,8 @@ QUALITY_TEXT = {
 }
 
 INTRO_S_PER_SENTENCE = 2.5
+
+ALL = "all"
 
 
 class Coach:
@@ -94,10 +100,13 @@ class SessionManager:
         self.profile = profile
         self.log = log
         self.save_profile = save_profile or (lambda p: None)
-        if exercises:
-            self.plan = list(exercises)       # chosen explicitly: no day schedule
-        else:
-            self.plan = [n for n in config.SESSION_ORDER if should_do_today(n, log)]
+        # today's plan, the menu's "all" item
+        self.today = [n for n in config.SESSION_ORDER if should_do_today(n, log)]
+        # chosen explicitly: no day schedule and no menu
+        self.fixed = bool(exercises)
+        self.plan = list(exercises) if exercises else []
+        self.menu = [ALL] + list(config.SESSION_ORDER)
+        self.menu_index = 0
         self.index = -1
         self.stage = "start"
         self.paused = False
@@ -142,6 +151,13 @@ class SessionManager:
     # --- keys -------------------------------------------------------------------
 
     def on_key(self, key, now):
+        """key: " ", "up", "down", "m" or a digit."""
+        if self.stage == "menu":
+            self._menu_key(key, now)
+            return
+        if key == "m" and not self.fixed and self.stage not in ("start", "greeting"):
+            self._back_to_menu(now)
+            return
         if key != " ":
             return
         if self.stage == "greeting":
@@ -151,7 +167,10 @@ class SessionManager:
         elif self.stage == "rest":
             self._end_rest(now)
         elif self.stage == "summary":
-            self.done = True
+            if self.fixed:
+                self.done = True
+            else:
+                self._open_menu(now)
         elif self.stage in ("exercise", "calibrating", "intro"):
             self.paused = not self.paused
             if self.paused:
@@ -172,10 +191,14 @@ class SessionManager:
         stage = self.stage
         if stage == "start":
             name = config.USER_NAME
-            self._say(f"Hello {name}. Let's do your hand exercises together.",
-                      "Press the space bar when you are ready.")
-            self._instruction = "Press the space bar to start"
-            self._enter("greeting", now)
+            if self.fixed:
+                self._say(f"Hello {name}. Let's do your hand exercises together.",
+                          "Press the space bar when you are ready.")
+                self._instruction = "Press the space bar to start"
+                self._enter("greeting", now)
+            else:
+                self._say(f"Hello {name}. Which exercise would you like to do?")
+                self._open_menu(now)
         elif stage == "intro":
             n = len(self.exercise.instructions) + 1
             if now - self._stage_t >= INTRO_S_PER_SENTENCE * n and not self.speaker.busy:
@@ -209,6 +232,44 @@ class SessionManager:
         elif stage == "rest":
             if now - self._stage_t >= self._rest_s:
                 self._end_rest(now)
+
+    # --- menu -------------------------------------------------------------------------
+
+    def _open_menu(self, now):
+        self.menu_index = 0
+        self._say("Press a number to choose an exercise, "
+                  "or press the space bar to do all of today's exercises.")
+        self._instruction = "Press a number to choose"
+        self._enter("menu", now)
+
+    def _menu_key(self, key, now):
+        if key == "up":
+            self.menu_index = (self.menu_index - 1) % len(self.menu)
+        elif key == "down":
+            self.menu_index = (self.menu_index + 1) % len(self.menu)
+        elif key == " ":
+            self._choose(self.menu[self.menu_index], now)
+        elif key.isdigit() and int(key) < len(self.menu):
+            self.menu_index = int(key)
+            self._choose(self.menu[self.menu_index], now)
+
+    def _choose(self, item, now):
+        self.plan = list(self.today) if item == ALL else [item]
+        self.index = -1
+        self.summaries = []
+        self.exercise = None
+        self.coach = None
+        self._next_exercise(now)
+
+    def _back_to_menu(self, now):
+        """Leave whatever is running; keep what was done."""
+        self.stop(now)
+        self.paused = False
+        self.calibration = None
+        self._quality = None
+        self._after_rest = None
+        self._say("Let's choose another exercise.")
+        self._open_menu(now)
 
     # --- flow -------------------------------------------------------------------------
 
@@ -316,8 +377,13 @@ class SessionManager:
                 lines.append(f"  {message}")
                 self._say(message)
         self.summary_lines = lines or ["No exercises done today."]
-        self._say(f"That's all for today. Well done, {config.USER_NAME}.")
-        self._instruction = "Well done! Press the space bar to finish"
+        if self.fixed:
+            self._say(f"That's all for today. Well done, {config.USER_NAME}.")
+            self._instruction = "Well done! Press the space bar to finish"
+        else:
+            self._say(f"Well done, {config.USER_NAME}.",
+                      "Press the space bar to choose another exercise.")
+            self._instruction = "Space bar: choose another exercise"
         self._enter("summary", now)
 
     def stop(self, now):
@@ -339,6 +405,8 @@ class SessionManager:
             "footer": "Space bar: start / pause / continue",
             "quality": None,
         }
+        if not self.fixed and self.stage not in ("start", "menu"):
+            v["footer"] = "Space: pause / continue   M: menu"
         if self.stage == "exercise" and self.exercise:
             ex = self.exercise
             v["exercise_display"] = ex.display
@@ -359,4 +427,15 @@ class SessionManager:
         elif self.stage == "summary":
             v["title"] = "Today's session"
             v["summary_lines"] = self.summary_lines
+            if not self.fixed:
+                v["footer"] = "Space: menu   Q: finish"
+        elif self.stage == "menu":
+            v["title"] = "Choose an exercise"
+            v["footer"] = "Up/Down: choose  Space: start"
+            v["menu"] = [{
+                "key": str(i),
+                "text": "All of today's exercises" if item == ALL else EXERCISES[item].title,
+                "selected": i == self.menu_index,
+                "note": "" if item == ALL or item in self.today else "not today",
+            } for i, item in enumerate(self.menu)]
         return v

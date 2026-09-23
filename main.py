@@ -6,7 +6,11 @@ Hand rehabilitation coach for Eleanor.
     python main.py --video test.mp4         run on a recording instead of the webcam
     python main.py --no-speech              print instead of speaking
 
-Keys: space = start / pause / continue, q or Esc = stop.
+Without --exercise it starts with a menu: press a number (or up/down and
+space) to pick one exercise, or space for all of today's exercises.
+
+Keys: space = start / pause / continue, m = back to the menu,
+q or Esc = stop.
 
 Wiring only: Sense -> features -> Think (Coach + SessionManager) -> Act.
 Nothing imports this file.
@@ -34,6 +38,26 @@ def parse_args():
     p.add_argument("--no-mirror", action="store_true",
                    help="for recordings that are already mirrored")
     return p.parse_args()
+
+
+# Arrow key codes from cv2.waitKeyEx: Linux, Windows, macOS.
+UP_KEYS = {0xFF52, 0x260000, 0xF700}
+DOWN_KEYS = {0xFF54, 0x280000, 0xF701}
+
+
+def key_name(code):
+    """cv2.waitKeyEx code -> "up", "down", "q", " ", a digit ... or None."""
+    if code < 0:
+        return None
+    # on Linux, modifier state (e.g. NumLock) is added in the high bits
+    if code in UP_KEYS or code & 0xFFFF == 0xFF52:
+        return "up"
+    if code in DOWN_KEYS or code & 0xFFFF == 0xFF54:
+        return "down"
+    if code & 0xFF00 or not code & 0xFF:
+        return None
+    char = code & 0xFF
+    return "q" if char == 27 else chr(char).lower()
 
 
 def main():
@@ -69,11 +93,11 @@ def main():
 
             # Act
             display.show(display.render(frame, session.view(), f))
-            key = cv2.waitKey(1) & 0xFF
-            if key in (ord("q"), 27):
+            key = key_name(cv2.waitKeyEx(1))
+            if key == "q":
                 break
-            if key == ord(" "):
-                session.on_key(" ", t)
+            if key:
+                session.on_key(key, t)
     finally:
         session.stop(t)
         speaker.close()
