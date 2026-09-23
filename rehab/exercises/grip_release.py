@@ -31,7 +31,7 @@ class GripRelease(TwoPhaseExercise):
         "Rest your elbow and show me your palm.",
     )
     need_palm_facing = True
-    best_phrase = "That's your widest yet today."
+    range_steps = ("closed", "open")
     progress_phrase = "Your hand opened {pct}% wider than {when}."
     phases = (
         Phase("open", "high", "Open your hand wide.", "OPEN"),
@@ -85,6 +85,10 @@ class GripRelease(TwoPhaseExercise):
                 self._lagging = finger
                 self._rep.setdefault("lagging", {}).setdefault(finger, 0)
                 self._rep["lagging"][finger] += 1
+        # each finger during the open hold, for "your ring finger opened more"
+        if self._holding and phase.key == "open":
+            for finger, v in self._finger_values.items():
+                self._rep.setdefault("finger_hold", {}).setdefault(finger, []).append(v)
         # gesture recognizer as a secondary check, only during holds
         if self._holding and f.gesture and f.gesture != "None":
             self._gesture_frames += 1
@@ -100,8 +104,10 @@ class GripRelease(TwoPhaseExercise):
 
     def rep_extra(self):
         lag = self._rep.get("lagging", {})
+        held = self._rep.get("finger_hold", {})
         extra = {
             "lagging_finger": max(lag, key=lag.get) if lag else "",
+            "finger_hold": {k: round(float(np.median(v)), 3) for k, v in held.items() if v},
             "gesture_disagreement": round(self._gesture_disagree / self._gesture_frames, 2)
             if self._gesture_frames else "",
         }

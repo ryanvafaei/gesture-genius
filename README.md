@@ -14,11 +14,14 @@ python main.py --no-speech                  # print instead of speaking
 python -m pytest tests                      # tests (synthetic hands, no camera needed)
 ```
 
-**Keys:** space starts, pauses and continues (and skips a rest). `q`/Esc stops.
-In the menu, press a number (`1`–`6`) to pick one exercise, or `0` / space for all of today's
-exercises; the up and down arrows move the highlight. `m` goes back to the menu at any time.
-Speech uses `say -r 140` on macOS and `pyttsx3` on Windows and Linux (`rehab/tts_util.py` detects
-the system; on Linux the `espeak` command is used when pyttsx3 is not available).
+**Answers without a keyboard:** thumbs up = yes / good, thumbs down = no / not so good (either
+hand, held for a moment). **Keys:** space = yes / continue / pause (and skips a rest), `y` / `n`
+= yes / no, `q`/Esc stops (what was done is kept). In the menu, press a number (`1`–`6`) to pick
+one exercise, `0` / space for all of today's exercises, or `7` to finish for today; the up and down
+arrows move the highlight. `m` goes back to the menu at any time.
+Speech uses `say -r 145` on macOS and `pyttsx3` on Windows and Linux (`rehab/tts_util.py` detects
+the system; on Linux the `espeak` command is used when pyttsx3 is not available). Voice and rate
+are per user in `data/profile.json`.
 Speech is slow, so every message is checked again just before it is spoken and skipped when
 she has already done what it asks. Calibration only starts timing a position after its prompt
 has been spoken, and a clearly wrong calibration (e.g. "open" less open than "closed") is measured
@@ -41,12 +44,51 @@ and exercise-specific details (lagging finger, isolation score, correct/wrong to
 
 ### Session flow
 
-greeting → menu (one exercise, or all of today's) → for each exercise: short instruction → calibration (first time, or when older than
-14 days; otherwise space within 6 s to recalibrate) → sets with rests → summary with a progress
-message compared with her own earlier sessions ("Your hand opened 12% wider than last week")
-→ space returns to the menu to choose another exercise.
-When her range drops over several reps the coach offers a rest. After a good session the target
-is raised a little (`AUTO_PROGRESSION` in `rehab/config.py`, which a therapist can switch off).
+```
+(first time: choose the coach's name, pick 3 favourite activities)
+greeting → check-in → menu or today's plan → [activity card → exercise → rest] × n
+→ summary → garden → goodbye
+```
+
+- **Greeting:** chosen by the days since her last session (first ever, same day, 1 day, 2–6 days,
+  7+ days, after a difficult day). It mentions at most one remembered fact, and only facts stored
+  in `data/`. A gap is never called a failure; after 7+ days the coach says "let's start gently",
+  and targets start two steps lower.
+- **Check-in:** "How is your hand feeling today?" Thumbs down switches on difficult day mode.
+- **Menu:** one exercise, all of today's, or "Finish for today". With `--exercise` there is no
+  menu, only "Today we'll do one exercise."
+- **Each exercise:** a full-screen activity card ("This practises holding a cup of tea."), then
+  calibration (first time, or when older than 14 days; otherwise space within 6 s to recalibrate),
+  then sets with rests. The target is adapted after every set.
+- **Summary:** one highlight from today, plus one comparison with her own history ("Your hand opened
+  12% wider than last week").
+- **Garden:** a new seed (she picks one of two plants) or the next growth stage, with a short
+  animation.
+- **Goodbye:** the same closing line every time, plus "Next time, we'll keep your rose growing."
+
+When her range drops over several reps the coach offers a rest.
+
+### Motivation features
+
+Think decides what happened and emits events (`rehab/events.py`); Act decides how to say it
+(`rehab/feedback.py` with the phrase bank in `content/phrases.json`). Wording can change without
+touching logic, and all logic is tested without a camera or speaker.
+
+| Feature | Where | Rules (starting values in `rehab/config.py`, not clinical values) |
+|---|---|---|
+| Personal bests | `progress.py` | A rep's value is the **median during the hold** (raw measure, comparable across recalibrations), not the peak frame. A best must be ≥3% above the old one. Levels: today / this week / all time; only the highest is announced, at most one per set, after the rep. No announcements in her first session ("I've saved today as your starting point."). Also per exercise: reps without hints and hold steadiness. Speed is deliberately never a best. |
+| Adaptive targets | `progress.py` | The target is the "high" threshold, a % of her calibrated range, evaluated once per set: ≥80% successful reps → +3 points, <50% → −3 (silently), floor 50%, ceiling 100%. A rep is successful when she reached and held the target without a hint. The session starts one step below last time (two after 7+ days). When her holds go beyond her calibrated maximum, the calibrated range grows. `AUTO_PROGRESSION = False` freezes targets. |
+| Difficult day mode | `progress.py`, `Think.py` | Switched on by a thumbs down at the check-in, a first set 15% below the median of her last 5 normal sessions, the existing fatigue check, or <50% success in two sets in a row. It then stays on for the session: targets ×0.8, one set fewer, rests ×1.5, no grip squeeze, praise for effort, no comparisons. Said once: "Let's take it easier today." Difficult sessions never change saved targets and are left out of baselines. Three difficult days out of the last five add a note for the therapist in `sessions.csv`. |
+| Specific praise | `feedback.py` | Only for events that were really measured ("Your ring finger opened more that time." needs the per-finger data). A soft chime every successful rep; one spoken phrase at most, the most important event, or a short generic one about every 3 reps. The last 3 phrases of a category are never reused. |
+| Speech priority | `Act.py` | Instructions can jump ahead of waiting praise and cut off older praise. Praise never delays an instruction. Rep praise waiting over 3 s is dropped instead of played late. |
+| Coach character | `content/character.json`, `memory.py` | She picks the name ("Iris" or "Robin") at the first session. Warm, calm and respectful. A simple face with three expressions (neutral, happy, encouraging). The same opening, check-in and closing lines every session. |
+| Daily activities | `content/activities.json` | Six activity cards at the first session, and she keeps up to three. Each exercise shows its link (her favourites first) on a card and as a small icon. Milestones at 50, 100, 250 and 500 reps per activity. Framed as practice toward an activity, never a promise. Please have a therapist check the links. |
+| Garden | `garden.py`, `ui.py` | Grows from showing up, not performance: every session with a completed exercise waters it, difficult days too. Seed → sprout → leaves → bud → flower; 8 plots, then "a new season". A best adds a bee, a milestone a butterfly. Nothing ever wilts or goes backwards. A watering can shows the exercises done today. |
+
+Screens use Pillow with Atkinson Hyperlegible (`assets/fonts`, SIL Open Font License). Icons and
+garden pictures are drawn in calm, flat colours. PNGs exported from Figma are used instead when
+present: `assets/icons/<icon>.png`, `assets/garden/<plant>_<stage>.png` (stage 0–4),
+`assets/garden/{bee,butterfly,can,bed}.png`.
 
 ### Files
 
@@ -59,16 +101,28 @@ rehab/filters.py           One Euro filter
 rehab/calibration.py       per-exercise capture of her range (median over a 3 s hold)
 rehab/exercises/base.py    Exercise base, hysteresis, two-phase and sequence engines, rep quality measures
 rehab/exercises/*.py       the six exercises
-rehab/Think.py             Coach (quality checks, logging, fatigue) + SessionManager (session flow)
-rehab/Act.py               speech thread + drawing (skeleton, bar with target line, sequence, subtitles)
+rehab/Think.py             Coach (quality checks, logging, rep events) + SessionManager (session flow)
+rehab/events.py            events with priorities: what Think tells Act
+rehab/progress.py          personal bests, adaptive targets, difficult days, milestones
+rehab/memory.py            greetings and what the coach remembers
+rehab/garden.py            the garden's state (grows, never wilts)
+rehab/Act.py               speech with a priority queue + drawing (skeleton, bar, sequence, subtitles)
 rehab/tts_util.py          text-to-speech backend by OS (`say` on macOS, pyttsx3 elsewhere)
-rehab/storage.py           data/profile.json, data/reps.csv, data/history.csv
+rehab/feedback.py          events -> words from content/phrases.json (no repeats, praise frequency)
+rehab/ui.py                Pillow text, full-screen cards, summary, garden, watering can, coach face
+rehab/storage.py           data/profile.json, reps.csv, history.csv, sessions.csv, garden.json
+content/                   character.json, phrases.json, activities.json (edit wording here)
+assets/                    fonts (Atkinson Hyperlegible), optional icons and garden PNGs
 tools/tracking_check.py    Phase 1: detection rate and jitter of each measure with your camera
 tools/validate.py          Phase 8: program rep count vs. a count by hand, on recorded videos
 tests/                     unit and session tests driven by a synthetic 3D hand
 ```
 
-`data/` holds personal data and is not committed.
+`data/` holds personal data and is not committed. `reps.csv` is written after every rep; the
+profile, `garden.json` and `sessions.csv` go to a temporary file first and are then renamed, so a
+crash never leaves half a file. An unreadable file is set aside (`*.broken-<time>`), and the coach
+starts as on a first day rather than remembering something wrong. Older data files are upgraded
+automatically (new CSV columns, `thresholds` → `targets`).
 
 ### Before the first real session
 
@@ -90,6 +144,12 @@ tests/                     unit and session tests driven by a synthetic 3D hand
 - Finger tapping depends heavily on the camera angle.
 - The Brunnstrom stage and the default sets and reps come from the video and should be confirmed
   by a therapist before real use.
+- All motivation numbers (best threshold, target step, success rates, difficult-day drop) are
+  starting values for testing, not clinical values.
+- The app gives no medical advice. Repeated difficult days only leave a note for her therapist
+  or family.
+- The plan's fallback of adapting hold time instead of range is not needed: every range exercise
+  measures range. The two sequence exercises keep their own levels.
 
 The original elbow template (`coach/`) is unchanged below.
 

@@ -30,7 +30,7 @@ class FingerAbduction(TwoPhaseExercise):
         "Keep your fingers straight and show me your palm.",
     )
     need_palm_facing = True
-    best_phrase = "That's your widest spread yet today."
+    range_steps = ("together", "spread")
     progress_phrase = "Your fingers spread {pct}% wider than {when}."
     phases = (
         Phase("spread", "high", "Spread your fingers apart.", "SPREAD"),

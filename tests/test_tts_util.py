@@ -59,6 +59,12 @@ def test_macos_uses_say(monkeypatch):
     assert tts._argv("Open your hand wide.") == ["say", "-r", "140", "Open your hand wide."]
 
 
+def test_macos_voice_from_the_profile(monkeypatch):
+    commands(monkeypatch, "say")
+    tts = make_tts(145, "macos", voice="Samantha")
+    assert tts._argv("Hello.") == ["say", "-v", "Samantha", "-r", "145", "Hello."]
+
+
 def test_macos_without_say_falls_back_to_pyttsx3(monkeypatch):
     fake_pyttsx3(monkeypatch)
     commands(monkeypatch)

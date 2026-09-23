@@ -25,7 +25,7 @@ class GripSqueeze(TwoPhaseExercise):
         "Squeeze when I say squeeze, and let go when I say relax.",
     )
     need_palm_facing = False
-    best_phrase = "Lovely strong squeeze."
+    range_steps = ("hold", "squeeze")
     progress_phrase = "You held your squeezes {pct}% longer than {when}."
 
     def __init__(self, *args, **kwargs):

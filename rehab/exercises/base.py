@@ -57,11 +57,28 @@ class Say:
     returns False the message is out of date (e.g. "Now close your hand."
     after she already closed and held) and is skipped. Counts and `optional`
     messages are dropped when the speaker is busy.
+
+    priority  1 (safety) .. 6 (effort praise), see rehab/events.py; by
+              default taken from the kind. Instructions may jump ahead of
+              waiting praise, praise never ahead of an instruction.
+    tag       marks a message for the coach (e.g. "rep_done": praise for the
+              rep goes right after it, before the next prompt)
+    mood      face the coach shows while saying it (neutral, happy, encouraging)
     """
     text: str
-    kind: str = "instruction"     # instruction | count | praise | hint | quality
+    kind: str = "instruction"     # instruction | count | praise | hint | quality | chime
     valid: callable = field(default=None, repr=False, compare=False)
     optional: bool = False
+    priority: int = None
+    tag: str = ""
+    mood: str = None
+    queued_at: float = field(default=None, repr=False, compare=False)
+
+    KIND_PRIORITY = {"quality": 1, "instruction": 2, "hint": 2, "praise": 5, "count": 5, "chime": 5}
+
+    def __post_init__(self):
+        if self.priority is None:
+            self.priority = self.KIND_PRIORITY.get(self.kind, 2)
 
     @property
     def ephemeral(self):
@@ -96,6 +113,12 @@ class RepRecord:
     range_high: float = float("nan")      # best reached, fraction of calibrated range
     range_low: float = float("nan")       # lowest reached, fraction of calibrated range
     raw_high: float = float("nan")        # same peak, uncalibrated (comparable over recalibrations)
+    # The rep's value for bests and targets: the median during the hold of
+    # the target position, not the single best frame (robust to jitter).
+    hold_value: float = float("nan")      # fraction of calibrated range
+    hold_raw: float = float("nan")        # uncalibrated
+    target: float = float("nan")          # target ("high" threshold) used for this rep
+    success: bool = True                  # reached and held the target without a hint
     movement_time: float = float("nan")   # s, from leaving one position to reaching the other
     smoothness_peaks: int = 0             # speed peaks during that movement (1 = smooth)
     hold_stability: float = float("nan")  # std of the metric during the holds
@@ -349,7 +372,9 @@ class TwoPhaseExercise(Exercise):
     """
 
     phases = ()
-    best_phrase = "That's your best yet today."
+    # calibration steps (lower end, upper end) of the target movement; the
+    # calibrated range grows along them when she goes beyond her maximum
+    range_steps = ()
     compensation_messages = {
         "palm_rotation": "Try not to turn your hand.",
         "wrist_moved": "Try to keep your wrist still.",
@@ -387,11 +412,29 @@ class TwoPhaseExercise(Exercise):
     def hold_time(self, phase):
         return phase.hold_s if phase.hold_s is not None else self.params["hold_s"]
 
+    @property
+    def target(self):
+        return self.params["high"]
+
+    @property
+    def target_phase(self):
+        """Index of the phase with the target (the "high" zone)."""
+        return next((i for i, p in enumerate(self.phases) if p.zone == "high"), 0)
+
+    def set_target(self, high):
+        """New target for the next set (never changed during a set)."""
+        p = self.params
+        high = max(float(high), p["low"] + p["gap"])
+        p["high"] = round(high, 3)
+        self.hyst = Hysteresis(p["high"], p["low"], p["gap"])
+
     def _reset_rep(self, now):
         self._rep = {
             "t_start": now,
             "values": [], "times": [], "raw": [],
             "hold_values": {},        # phase index -> values of the last hold
+            "hold_raw": {},           # phase index -> raw values of the last hold
+            "target_misses": 0,       # hints or broken holds on the way to the target
             "phase_done_t": None, "movement_samples": None,
             "movement_time": float("nan"), "smoothness": 0,
             "normal0": None, "wrist0": None,
@@ -477,6 +520,7 @@ class TwoPhaseExercise(Exercise):
                 self._hold_start = now
                 self._counted = 0
                 rep["hold_values"][self._phase] = []
+                rep["hold_raw"][self._phase] = []
                 self._progress(now)
                 if rep["movement_samples"] is not None:
                     samples = rep["movement_samples"]
@@ -489,11 +533,15 @@ class TwoPhaseExercise(Exercise):
             elif self._stalled(now) and self._hints.ready("stall", now):
                 out.append(Say(self.stall_hint(f), "hint", valid=self._while_waiting()))
                 rep["hints"] += 1
+                if self._phase == self.target_phase:
+                    rep["target_misses"] += 1
                 self._progress(now)
         else:
             if not in_zone:
                 self._holding = False
                 self._progress(now)
+                if self._phase == self.target_phase:
+                    rep["target_misses"] += 1
                 if self._hints.ready("hold", now):
                     out.append(Say("Hold it a little longer.", "hint", valid=self._while_waiting()))
                     rep["hints"] += 1
@@ -501,6 +549,7 @@ class TwoPhaseExercise(Exercise):
                 held = now - self._hold_start
                 if held >= HOLD_SETTLE_S:       # ignore the tail of the movement into the hold
                     rep["hold_values"][self._phase].append(value)
+                    rep["hold_raw"][self._phase].append(rep["raw"][-1])
                 if self._counting(phase):
                     k = int(held)
                     if k > self._counted and held < self.hold_time(phase):
@@ -538,8 +587,8 @@ class TwoPhaseExercise(Exercise):
         zt = rep["zone_time"]
         if zt.get("zone") in ("high", "low"):
             zt[zt["zone"] + "_s"] = max(zt.get(zt["zone"] + "_s", 0.0), now - zt["since"])
-        prev_best = max((r.range_high for r in self.reps if np.isfinite(r.range_high)),
-                        default=None)
+        target_hold = rep["hold_values"].get(self.target_phase) or []
+        target_raw = rep["hold_raw"].get(self.target_phase) or []
         rec = RepRecord(
             exercise=self.name,
             set_no=self.set_no,
@@ -554,15 +603,18 @@ class TwoPhaseExercise(Exercise):
             if any(rep["hold_values"].values()) else float("nan"),
             compensation=list(rep["comp"]),
             hints=rep["hints"],
+            hold_value=float(np.median(target_hold)) if target_hold else float("nan"),
+            hold_raw=float(np.median(target_raw)) if target_raw else float("nan"),
+            target=float(self.params["high"]),
+            success=rep["target_misses"] == 0,
             extra={"high_zone_s": round(zt.get("high_s", 0.0), 2),
                    "low_zone_s": round(zt.get("low_s", 0.0), 2),
                    **self.rep_extra()},
         )
         self._add_rep(rec)
-        # "That's three." (a bare "three." sounds like the hold count)
-        out = [Say(f"That's {number_word(rec.rep_no)}.", "praise")]
-        if prev_best is not None and rec.range_high > prev_best + 0.02:
-            out.append(Say(self.best_phrase, "praise"))
+        # "That's three." (a bare "three." sounds like the hold count).
+        # Praise for the rep (bests etc.) is added right after it by the coach.
+        out = [Say(f"That's {number_word(rec.rep_no)}.", "praise", tag="rep_done")]
         self._reset_rep(now)
         return out
 
@@ -811,13 +863,14 @@ class SequenceExercise(Exercise):
             raw_high=float(np.mean(times)) if times else float("nan"),
             movement_time=float(np.mean(times)) if times else float("nan"),
             hints=r["hints"],
+            success=r["wrong"] == 0 and not r["revealed"],
             extra={"mode": self.mode, "length": len(r["seq"]),
                    "sequence": "-".join(r["seq"]),
                    "correct": r["correct"], "wrong": r["wrong"],
                    **self.round_extra(r)},
         )
         self._add_rep(rec)
-        out = [Say("Well done, that's the whole sequence.", "praise")]
+        out = [Say("Well done, that's the whole sequence.", "praise", tag="rep_done")]
         if r["wrong"] == 0 and not r["revealed"]:
             self._clean_rounds += 1
         else:

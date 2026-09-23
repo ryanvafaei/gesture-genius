@@ -1,0 +1,60 @@
+{
+  "_about": "Links from exercises to daily activities. Framed as practice toward an activity, never as a promise. Please have a therapist check the links. Icons: assets/icons/<icon>.png when present, otherwise a simple drawn pictogram.",
+  "activities": {
+    "gardening": {"name": "gardening", "icon": "trowel", "card": "Gardening", "practice_for": "your gardening"},
+    "tea":       {"name": "making tea", "icon": "cup", "card": "A cup of tea", "practice_for": "holding your cup"},
+    "cooking":   {"name": "cooking", "icon": "pot", "card": "Cooking", "practice_for": "your cooking"},
+    "reading":   {"name": "reading", "icon": "book", "card": "Reading", "practice_for": "turning the pages of your books"},
+    "dressing":  {"name": "getting dressed", "icon": "button", "card": "Getting dressed", "practice_for": "doing up your buttons"},
+    "phone":     {"name": "using your phone", "icon": "phone", "card": "Using your phone", "practice_for": "using your phone"}
+  },
+  "exercises": {
+    "grip_release": {
+      "part": "grip", "what": "hand opening",
+      "activities": ["tea", "gardening"],
+      "links": {
+        "tea":       {"sentence": "Holding a cup.", "intro": "This practises holding a cup of tea."},
+        "gardening": {"sentence": "Holding a garden trowel.", "intro": "This practises holding your garden trowel."}
+      }
+    },
+    "finger_abduction": {
+      "part": "fingers", "what": "finger spread",
+      "activities": ["cooking", "gardening"],
+      "links": {
+        "cooking":   {"sentence": "Opening your hand around a plate.", "intro": "This practises opening your hand around a plate."},
+        "gardening": {"sentence": "Opening your hand around a flower pot.", "intro": "This practises opening your hand around a flower pot."}
+      }
+    },
+    "thumb_flexion": {
+      "part": "thumb", "what": "thumb stretch",
+      "activities": ["reading", "dressing"],
+      "links": {
+        "reading":  {"sentence": "Turning the pages of a book.", "intro": "This practises turning the pages of a book."},
+        "dressing": {"sentence": "Doing up buttons.", "intro": "This practises doing up your buttons."}
+      }
+    },
+    "thumb_opposition": {
+      "part": "fingertips", "what": "fingertip touches",
+      "activities": ["dressing", "gardening"],
+      "links": {
+        "dressing":  {"sentence": "Doing up buttons.", "intro": "This practises doing up your buttons."},
+        "gardening": {"sentence": "Picking up small seeds.", "intro": "This practises picking up small seeds."}
+      }
+    },
+    "finger_tapping": {
+      "part": "fingers", "what": "finger lifts",
+      "activities": ["phone"],
+      "links": {
+        "phone": {"sentence": "Using your phone.", "intro": "This practises using your phone."}
+      }
+    },
+    "grip_squeeze": {
+      "part": "squeeze", "what": "squeeze",
+      "activities": ["gardening", "cooking"],
+      "links": {
+        "gardening": {"sentence": "Carrying a watering can.", "intro": "This practises carrying your watering can."},
+        "cooking":   {"sentence": "Carrying a shopping bag.", "intro": "This practises carrying your shopping bag."}
+      }
+    }
+  }
+}

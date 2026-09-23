@@ -4,13 +4,29 @@ import collections
 
 import numpy as np
 
-from rehab import features
-from rehab.Act import enqueue
+from rehab import features, storage
+from rehab.Act import SpeechBase, enqueue, interrupts, next_message
 from rehab.calibration import CalibrationRoutine
-from rehab.exercises.base import Say
 from synthetic_hand import IMAGE_SIZE, hand
 
 FPS = 30.0
+
+
+def returning_profile():
+    """A profile after the first-time setup (coach name and activities chosen)."""
+    p = storage.new_profile()
+    p["coach_name"] = "Iris"
+    p["chosen_activities"] = ["tea", "gardening", "reading"]
+    return p
+
+
+def answer(session, t, yes=True):
+    """Answer a question on screen (name, activities, check-in, plant) like the space / n keys."""
+    from rehab.Think import QUESTION_STAGES
+    if session.stage in QUESTION_STAGES:
+        session.on_key("y" if yes else "n", t)
+        return True
+    return False
 
 
 class Clock:
@@ -67,7 +83,7 @@ def lerp(a, b, u):
     return tuple(np.asarray(a) + (np.asarray(b) - np.asarray(a)) * u)
 
 
-class TimedSpeaker:
+class TimedSpeaker(SpeechBase):
     """
     Speaker with the real queue rules, but speech takes simulated time
     (about 140 words per minute), so tests hear what she would hear and when.
@@ -77,30 +93,33 @@ class TimedSpeaker:
     S_PER_WORD = 60.0 / 140
     START_S = 0.3
 
-    def __init__(self, clock, max_queue=3, on_speak=None):
+    def __init__(self, clock, max_queue=6, on_speak=None, feedback=None):
         self.clock = clock
         self.max_queue = max_queue
         self.on_speak = on_speak or (lambda msg: None)
+        self.feedback = feedback
         self.items = collections.deque()
         self.current = None
         self.until = 0.0
         self.heard = []           # (time, text) in the order she hears them
+        self.cut_off = []         # texts interrupted by an instruction
+        self.chimes = 0
         self.last_text = ""
 
     @property
     def busy(self):
         return self.current is not None or bool(self.items)
 
-    def say(self, msg):
-        if isinstance(msg, str):
-            msg = Say(msg)
+    def _say(self, msg):
         if msg.ephemeral and self.busy:
             return
-        enqueue(self.items, msg, self.max_queue)
+        if interrupts(self.current, msg, self.clock.t):
+            self.cut_off.append(self.current.text)
+            self.current = None
+        enqueue(self.items, msg, self.max_queue, self.clock.t)
 
-    def say_all(self, messages):
-        for m in messages or []:
-            self.say(m)
+    def chime(self):
+        self.chimes += 1
 
     def clear(self):
         self.items.clear()
@@ -110,9 +129,9 @@ class TimedSpeaker:
         if self.current is not None and t >= self.until:
             self.current = None
         while self.current is None and self.items:
-            msg = self.items.popleft()
-            if not msg.still_valid():
-                continue
+            msg = next_message(self.items, t)
+            if msg is None:
+                break
             self.current = msg
             self.until = t + self.START_S + self.S_PER_WORD * len(msg.text.split())
             self.last_text = msg.text

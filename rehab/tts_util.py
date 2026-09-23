@@ -65,20 +65,21 @@ class Pyttsx3TTS:
         pass
 
 
-def _say(rate):
+def _say(rate, voice=None):
     if shutil.which("say"):
-        return CommandTTS(lambda text: ["say", "-r", str(rate), text])
+        chosen = ["-v", voice] if voice else []
+        return CommandTTS(lambda text: ["say", *chosen, "-r", str(rate), text])
     return None
 
 
-def _pyttsx3(rate):
+def _pyttsx3(rate, voice=None):
     try:
         return Pyttsx3TTS(rate)
     except Exception:
         return None
 
 
-def _espeak(rate):
+def _espeak(rate, voice=None):
     for exe in ("espeak-ng", "espeak"):
         if shutil.which(exe):
             return CommandTTS(lambda text, exe=exe: [exe, "-s", str(rate), text])
@@ -94,10 +95,13 @@ BACKENDS = {
 }
 
 
-def make_tts(rate, os_name=None):
-    """The text-to-speech backend for this system, or None when there is none."""
+def make_tts(rate, os_name=None, voice=None):
+    """
+    The text-to-speech backend for this system, or None when there is none.
+    voice: a macOS `say` voice name (e.g. "Samantha"); other backends use their default.
+    """
     for make in BACKENDS[os_name or detect_os()]:
-        tts = make(rate)
+        tts = make(rate, voice=voice)
         if tts is not None:
             return tts
     return None

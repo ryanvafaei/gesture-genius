@@ -31,7 +31,7 @@ class ThumbFlexion(TwoPhaseExercise):
         "Keep your other fingers relaxed and open.",
     )
     need_palm_facing = True
-    best_phrase = "That's your best thumb stretch yet today."
+    range_steps = ("in", "out")
     progress_phrase = "Your thumb moved {pct}% further than {when}."
     phases = (
         Phase("in", "low", "Bend your thumb across your palm.", "IN"),

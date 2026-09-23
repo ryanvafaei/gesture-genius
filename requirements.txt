@@ -8,3 +8,4 @@ transitions
 OneEuroFilter
 pygame-ce
 pyttsx3; sys_platform != "darwin"
+pillow
