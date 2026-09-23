@@ -4,6 +4,7 @@ from coach import Sense
 from coach import Think
 from coach import Act
 
+
 import numpy as np
 
 
@@ -34,6 +35,8 @@ def main():
 
         # Capture frame-by-frame from the webcam
         ret, frame = cap.read()
+        frame = cv2.flip(frame, 1)
+
         if not ret:
             print("Failed to grab frame")
             break
