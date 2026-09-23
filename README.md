@@ -17,7 +17,8 @@ python -m pytest tests                      # tests (synthetic hands, no camera 
 **Keys:** space starts, pauses and continues (and skips a rest). `q`/Esc stops.
 In the menu, press a number (`1`–`6`) to pick one exercise, or `0` / space for all of today's
 exercises; the up and down arrows move the highlight. `m` goes back to the menu at any time.
-Speech uses `say -r 140` on macOS, `espeak` on Linux, `pyttsx3` as a fallback.
+Speech uses `say -r 140` on macOS and `pyttsx3` on Windows and Linux (`rehab/tts_util.py` detects
+the system; on Linux the `espeak` command is used when pyttsx3 is not available).
 Speech is slow, so every message is checked again just before it is spoken and skipped when
 she has already done what it asks. Calibration only starts timing a position after its prompt
 has been spoken, and a clearly wrong calibration (e.g. "open" less open than "closed") is measured
@@ -60,6 +61,7 @@ rehab/exercises/base.py    Exercise base, hysteresis, two-phase and sequence eng
 rehab/exercises/*.py       the six exercises
 rehab/Think.py             Coach (quality checks, logging, fatigue) + SessionManager (session flow)
 rehab/Act.py               speech thread + drawing (skeleton, bar with target line, sequence, subtitles)
+rehab/tts_util.py          text-to-speech backend by OS (`say` on macOS, pyttsx3 elsewhere)
 rehab/storage.py           data/profile.json, data/reps.csv, data/history.csv
 tools/tracking_check.py    Phase 1: detection rate and jitter of each measure with your camera
 tools/validate.py          Phase 8: program rep count vs. a count by hand, on recorded videos
