@@ -74,7 +74,7 @@ ONE_EURO_D_CUTOFF = 1.0
 # ---------------------------------------------------------------------------
 
 SPEECH_ENABLED = True
-SPEECH_RATE = 140          # words per minute (`say -r 140`)
+SPEECH_RATE = 140          # words per minute (`say -r 140`, pyttsx3 rate)
 HINT_DELAY_S = 8.0         # no progress for this long -> one short hint
 HINT_REPEAT_S = 10.0       # at most one hint per this many seconds
 QUALITY_MESSAGE_REPEAT_S = 8.0

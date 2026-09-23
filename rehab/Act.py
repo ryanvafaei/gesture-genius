@@ -2,7 +2,7 @@
 Act: speech and drawing.
 
 Speaker   non-blocking text-to-speech in its own thread, slow rate
-          (`say -r 140` on macOS, espeak elsewhere, pyttsx3 as fallback).
+          (`say -r 140` on macOS, pyttsx3 on Windows and Linux; see tts_util).
           Counts are dropped when speech is busy so she never hears
           a backlog of old numbers, and every message is checked again
           just before it is spoken: one that is out of date by then
@@ -14,9 +14,6 @@ Display   camera image with the hand skeleton plus a side panel:
 """
 
 import collections
-import shutil
-import subprocess
-import sys
 import textwrap
 import threading
 import time
@@ -27,6 +24,7 @@ import numpy as np
 from rehab import config
 from rehab.exercises.base import FINGER_WORDS, Say
 from rehab.features import FINGER_LANDMARKS, GAP_NAMES, THUMB, WRIST
+from rehab.tts_util import make_tts
 
 # ---------------------------------------------------------------------------
 # Speech
@@ -60,19 +58,9 @@ class Speaker:
         self._cond = threading.Condition()
         self._speaking = False
         self._stop = threading.Event()
-        self._proc = None
-        self._engine = None
-        self._command = self._find_command() if enabled else None
+        self._tts = None
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-
-    def _find_command(self):
-        if sys.platform == "darwin" and shutil.which("say"):
-            return lambda text: ["say", "-r", str(self.rate), text]
-        for exe in ("espeak-ng", "espeak"):
-            if shutil.which(exe):
-                return lambda text, exe=exe: [exe, "-s", str(self.rate), text]
-        return None
 
     @property
     def busy(self):
@@ -98,6 +86,10 @@ class Speaker:
             self._items.clear()
 
     def _run(self):
+        if self.enabled:
+            # made here: a pyttsx3 engine stays in the thread that created it
+            self._tts = make_tts(self.rate)
+            self.enabled = self._tts is not None
         while not self._stop.is_set():
             with self._cond:
                 if not self._items:
@@ -120,27 +112,16 @@ class Speaker:
             print(f"[coach] {text}")
             time.sleep(0.05 * len(text.split()) + 0.2)     # roughly paced, keeps timings realistic
             return
-        if self._command:
-            self._proc = subprocess.Popen(self._command(text),
-                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self._proc.wait()
-            self._proc = None
-            return
         try:
-            if self._engine is None:
-                import pyttsx3
-                self._engine = pyttsx3.init()
-                self._engine.setProperty("rate", self.rate)
-            self._engine.say(text)
-            self._engine.runAndWait()
+            self._tts.speak(text)
         except Exception:
             print(f"[coach] {text}")
             self.enabled = False
 
     def close(self):
         self._stop.set()
-        if self._proc is not None:
-            self._proc.terminate()
+        if self._tts is not None:
+            self._tts.stop()
 
 
 class SilentSpeaker(Speaker):
