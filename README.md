@@ -1,3 +1,91 @@
+# Hand rehabilitation coach (Eleanor)
+
+`main.py` now runs a hand coach that **measures** the hand instead of classifying gestures.
+Every exercise is a continuous measure (an angle or distance from the 21 hand landmarks),
+scaled to Eleanor's own calibrated range, with hysteresis thresholds for each rep phase.
+The built-in gesture recognizer is still in the pipeline, but only as a logged secondary check.
+
+```bash
+pip install -r requirements.txt
+python main.py                              # full session
+python main.py --exercise grip_release      # one exercise
+python main.py --video recording.mp4        # run on a recording
+python main.py --no-speech                  # print instead of speaking
+python -m pytest tests                      # tests (synthetic hands, no camera needed)
+```
+
+**Keys:** space starts, pauses and continues (and skips a rest). `q`/Esc stops.
+Speech uses `say -r 140` on macOS, `espeak` on Linux, `pyttsx3` as a fallback.
+
+### Exercises
+
+| Exercise | Measure | One rep |
+|---|---|---|
+| `grip_release` | average finger openness (MCP+PIP+DIP flexion), per finger scaled to her range | open, hold → close, hold |
+| `finger_abduction` | sum of the 3 gaps between fingers, angles in the palm plane | spread, hold → together, hold (pauses if fingers bend) |
+| `thumb_flexion` | thumb MCP+IP flexion combined with thumb tip → pinky MCP distance | in, hold → out, hold |
+| `thumb_opposition` | thumb-to-fingertip distances / palm size | a sequence of touches (guided, then memory levels) |
+| `finger_tapping` | fingertip height above the calibrated flat hand + MCP angle | a sequence of lifts (in order, called out, or a remembered pattern) |
+| `grip_squeeze` | finger closure between "holding" and "squeezing" the cloth | squeeze, hold 4 s → relax 4 s (every other day) |
+
+Per rep it logs: range reached (% of calibration), movement time, smoothness (speed peaks),
+hold stability, compensation (palm rotation, wrist movement, other fingers moving), hints given,
+and exercise-specific details (lagging finger, isolation score, correct/wrong touches, level).
+
+### Session flow
+
+greeting → for each exercise: short instruction → calibration (first time, or when older than
+14 days; otherwise space within 6 s to recalibrate) → sets with rests → summary with a progress
+message compared with her own earlier sessions ("Your hand opened 12% wider than last week").
+When her range drops over several reps the coach offers a rest. After a good session the target
+is raised a little (`AUTO_PROGRESSION` in `rehab/config.py`, which a therapist can switch off).
+
+### Files
+
+```
+main.py                    wiring: Sense → features → Think → Act (nothing imports it)
+rehab/config.py            all settings and per-exercise parameters (sets, reps, thresholds, hold times)
+rehab/Sense.py             camera / video, MediaPipe GestureRecognizer → HandObservation
+rehab/features.py          landmarks → HandFeatures (angles, openness, spread, distances, quality flags)
+rehab/filters.py           One Euro filter
+rehab/calibration.py       per-exercise capture of her range (median over a 3 s hold)
+rehab/exercises/base.py    Exercise base, hysteresis, two-phase and sequence engines, rep quality measures
+rehab/exercises/*.py       the six exercises
+rehab/Think.py             Coach (quality checks, logging, fatigue) + SessionManager (session flow)
+rehab/Act.py               speech thread + drawing (skeleton, bar with target line, sequence, subtitles)
+rehab/storage.py           data/profile.json, data/reps.csv, data/history.csv
+tools/tracking_check.py    Phase 1: detection rate and jitter of each measure with your camera
+tools/validate.py          Phase 8: program rep count vs. a count by hand, on recorded videos
+tests/                     unit and session tests driven by a synthetic 3D hand
+```
+
+`data/` holds personal data and is not committed.
+
+### Before the first real session
+
+1. `python -m tools.tracking_check --seconds 30`. Hold up the **left** hand, palm to the camera.
+   The overlay should say `hand OK`. If it complains about the wrong hand, set
+   `RECOGNIZE_UNMIRRORED = False` in `rehab/config.py`. (On MediaPipe's sample photos, Tasks labels
+   the real hand in the unmirrored view, so the recognizer gets the unmirrored frame by default.)
+2. Record finger tapping and thumb opposition with `--record` and check the jitter table. Finger
+   tapping depends heavily on the camera angle: a tilted phone stand or a camera looking down helps.
+3. For the report: record test videos, count reps by hand, and run
+   `python -m tools.validate video.mp4 --exercise grip_release --expected 10 --calibrate 12`.
+   Results are appended to `data/validation.csv`.
+
+### Limits
+
+- One webcam gives estimated depth. The angles are good for relative progress over time, not
+  clinical goniometer measurements.
+- Grip squeeze measures holding and timing, not force.
+- Finger tapping depends heavily on the camera angle.
+- The Brunnstrom stage and the default sets and reps come from the video and should be confirmed
+  by a therapist before real use.
+
+The original elbow template (`coach/`) is unchanged below.
+
+---
+
 # **Interactive Coaching System for Post-Stroke Rehabilitation**
 
 ## **Project Overview**

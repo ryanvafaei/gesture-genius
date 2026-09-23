@@ -1,0 +1,351 @@
+"""
+Act: speech and drawing.
+
+Speaker   non-blocking text-to-speech in its own thread, slow rate
+          (`say -r 140` on macOS, espeak elsewhere, pyttsx3 as fallback).
+          Counts are dropped when speech is busy so she never hears
+          a backlog of old numbers.
+Display   camera image with the hand skeleton plus a side panel:
+          a large bar with the target line, per-finger detail, the
+          finger sequence, and big high-contrast text. Whatever is said
+          is also shown as a subtitle.
+"""
+
+import queue
+import shutil
+import subprocess
+import sys
+import textwrap
+import threading
+import time
+
+import cv2
+import numpy as np
+
+from rehab import config
+from rehab.exercises.base import FINGER_WORDS, Say
+from rehab.features import FINGER_LANDMARKS, GAP_NAMES, THUMB, WRIST
+
+# ---------------------------------------------------------------------------
+# Speech
+# ---------------------------------------------------------------------------
+
+
+class Speaker:
+
+    def __init__(self, enabled=config.SPEECH_ENABLED, rate=config.SPEECH_RATE, max_queue=3):
+        self.enabled = enabled
+        self.rate = rate
+        self.max_queue = max_queue
+        self.last_text = ""
+        self.last_time = 0.0
+        self._queue = queue.Queue()
+        self._busy = threading.Event()
+        self._stop = threading.Event()
+        self._proc = None
+        self._engine = None
+        self._command = self._find_command() if enabled else None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _find_command(self):
+        if sys.platform == "darwin" and shutil.which("say"):
+            return lambda text: ["say", "-r", str(self.rate), text]
+        for exe in ("espeak-ng", "espeak"):
+            if shutil.which(exe):
+                return lambda text, exe=exe: [exe, "-s", str(self.rate), text]
+        return None
+
+    @property
+    def busy(self):
+        return self._busy.is_set() or not self._queue.empty()
+
+    def say(self, msg):
+        if isinstance(msg, str):
+            msg = Say(msg)
+        if msg.ephemeral and self.busy:
+            return
+        if self._queue.qsize() >= self.max_queue:
+            try:
+                self._queue.get_nowait()        # drop the oldest, keep what is current
+            except queue.Empty:
+                pass
+        self._queue.put(msg)
+
+    def say_all(self, messages):
+        for m in messages or []:
+            self.say(m)
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                msg = self._queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            self._busy.set()
+            self.last_text = msg.text
+            self.last_time = time.monotonic()
+            try:
+                self._speak(msg.text)
+            finally:
+                self._busy.clear()
+
+    def _speak(self, text):
+        if not self.enabled:
+            print(f"[coach] {text}")
+            time.sleep(0.05 * len(text.split()) + 0.2)     # roughly paced, keeps timings realistic
+            return
+        if self._command:
+            self._proc = subprocess.Popen(self._command(text),
+                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self._proc.wait()
+            self._proc = None
+            return
+        try:
+            if self._engine is None:
+                import pyttsx3
+                self._engine = pyttsx3.init()
+                self._engine.setProperty("rate", self.rate)
+            self._engine.say(text)
+            self._engine.runAndWait()
+        except Exception:
+            print(f"[coach] {text}")
+            self.enabled = False
+
+    def close(self):
+        self._stop.set()
+        if self._proc is not None:
+            self._proc.terminate()
+
+
+class SilentSpeaker(Speaker):
+    """Prints instead of speaking and never blocks (for tests and validation)."""
+
+    def __init__(self, echo=False):
+        self.echo = echo
+        self.spoken = []
+        self.last_text = ""
+        self.last_time = 0.0
+
+    @property
+    def busy(self):
+        return False
+
+    def say(self, msg):
+        if isinstance(msg, str):
+            msg = Say(msg)
+        self.spoken.append(msg)
+        self.last_text = msg.text
+        if self.echo:
+            print(f"[coach] {msg.text}")
+
+    def close(self):
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+DARK = (35, 35, 35)
+GREY = (140, 140, 140)
+YELLOW = (0, 220, 255)
+GREEN = (80, 200, 80)
+BLUE = (230, 160, 60)
+ORANGE = (0, 140, 255)
+CYAN = (230, 230, 0)
+FONT = cv2.FONT_HERSHEY_DUPLEX
+
+FINGER_STATE_COLORS = {"lagging": ORANGE, "target": CYAN, "active": GREEN}
+GAP_COLORS = {"index_middle": (80, 180, 255), "middle_ring": (120, 220, 120), "ring_pinky": (255, 150, 200)}
+
+PANEL_W = 420
+
+
+def _text(img, text, org, scale=1.0, color=WHITE, thickness=2):
+    cv2.putText(img, text, org, FONT, scale, color, thickness, cv2.LINE_AA)
+
+
+def _band(img, y0, y1, alpha=0.6):
+    """Dark translucent band so text stays readable on any camera image."""
+    overlay = img.copy()
+    cv2.rectangle(overlay, (0, y0), (img.shape[1], y1), BLACK, -1)
+    cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+
+
+def _wrapped(img, text, x, y, width_px, scale=1.0, color=WHITE, thickness=2, line_gap=1.45):
+    char_w = cv2.getTextSize("M", FONT, scale, thickness)[0][0] * 0.8
+    per_line = max(8, int(width_px / char_w))
+    h = cv2.getTextSize("Mg", FONT, scale, thickness)[0][1]
+    for i, line in enumerate(textwrap.wrap(text, per_line)):
+        _text(img, line, (x, int(y + i * h * line_gap)), scale, color, thickness)
+    return y + len(textwrap.wrap(text, per_line)) * h * line_gap
+
+
+class Display:
+
+    def __init__(self, window="Hand coach"):
+        self.window = window
+
+    # --- skeleton -----------------------------------------------------------
+
+    def draw_hand(self, frame, f, finger_colors=None):
+        if f is None or not f.present or f.image_points is None:
+            return
+        pts = f.image_points.astype(int)
+        finger_colors = finger_colors or {}
+        chains = {"thumb": (WRIST,) + THUMB}
+        for name, lm in FINGER_LANDMARKS.items():
+            chains[name] = (WRIST,) + lm if name in ("index", "pinky") else lm
+        cv2.polylines(frame, [pts[[5, 9, 13, 17]]], False, WHITE, 3, cv2.LINE_AA)
+        for name, chain in chains.items():
+            state = finger_colors.get(name)
+            color = FINGER_STATE_COLORS.get(state, WHITE)
+            width = 8 if state else 3
+            for a, b in zip(chain[:-1], chain[1:]):
+                cv2.line(frame, tuple(pts[a]), tuple(pts[b]), color, width, cv2.LINE_AA)
+            if state == "target":
+                cv2.circle(frame, tuple(pts[chain[-1]]), 22, CYAN, 4, cv2.LINE_AA)
+        for p in pts:
+            cv2.circle(frame, tuple(p), 4, BLUE, -1, cv2.LINE_AA)
+
+    # --- panel widgets ------------------------------------------------------
+
+    def _bar(self, panel, d, top, height=360):
+        x0, x1 = 60, 170
+        y_top, y_bot = top, top + height
+        span = y_bot - y_top
+
+        def y_of(v):
+            return int(y_bot - np.clip(v, 0.0, 1.2) / 1.2 * span)
+
+        cv2.rectangle(panel, (x0, y_top), (x1, y_bot), GREY, 2)
+        value = d.get("value", 0.0)
+        target_zone = d.get("target_zone")
+        reached = (value >= d["high"]) if target_zone == "high" else (value <= d["low"])
+        fill = GREEN if reached else BLUE
+        cv2.rectangle(panel, (x0 + 3, y_of(value)), (x1 - 3, y_bot - 3), fill, -1)
+        # target lines
+        for level, key in ((d["high"], "high"), (d["low"], "low")):
+            y = y_of(level)
+            active = key == target_zone
+            cv2.line(panel, (x0 - 25, y), (x1 + 25, y), YELLOW if active else GREY, 5 if active else 2)
+        if d.get("best") is not None:
+            y = y_of(d["best"])
+            cv2.line(panel, (x1 + 5, y), (x1 + 30, y), WHITE, 2)
+            _text(panel, "best", (x1 + 34, y + 8), 0.6, WHITE, 1)
+        # hold progress as a filling ring
+        cx, cy, r = 300, top + 90, 60
+        cv2.circle(panel, (cx, cy), r, GREY, 6)
+        if d.get("holding"):
+            cv2.ellipse(panel, (cx, cy), (r, r), -90, 0, 360 * d.get("hold_progress", 0.0), GREEN, 10)
+        _text(panel, d.get("phase_label", ""), (cx - 70, cy + r + 45), 1.1, YELLOW, 2)
+        _text(panel, f"{int(round(value * 100))}%", (x0 + 5, y_bot + 45), 1.1, WHITE, 2)
+        return y_bot + 70
+
+    def _finger_bars(self, panel, values, top, colors, labels):
+        x = 30
+        for key, v in values.items():
+            h = int(np.clip(v, 0, 1.2) / 1.2 * 90)
+            color = colors.get(key, GREY)
+            cv2.rectangle(panel, (x, top + 90 - h), (x + 60, top + 90), color, -1)
+            cv2.rectangle(panel, (x, top), (x + 60, top + 90), GREY, 1)
+            _text(panel, labels.get(key, key)[:6], (x, top + 115), 0.55, WHITE, 1)
+            x += 85
+        return top + 130
+
+    def _sequence(self, panel, d, top):
+        seq, step = d.get("sequence", []), d.get("step", 0)
+        y = top
+        for i, finger in enumerate(seq):
+            done = i < step
+            current = i == step
+            label = "?" if d.get("hidden") and not done else FINGER_WORDS[finger].replace(" finger", "")
+            filled = done or (current and not d.get("hidden"))
+            color = GREEN if done else (CYAN if filled else GREY)
+            cv2.rectangle(panel, (40, y), (PANEL_W - 40, y + 50), color, -1 if filled else 2)
+            cv2.putText(panel, label.upper(), (60, y + 37), FONT, 1.0,
+                        BLACK if filled else WHITE, 2, cv2.LINE_AA)
+            y += 60
+        if "level" in d:
+            _text(panel, f"Level {d['level']}", (40, y + 35), 0.9, WHITE, 2)
+            y += 50
+        return y
+
+    def _ring(self, panel, progress, center, radius=70, label=""):
+        cv2.circle(panel, center, radius, GREY, 8)
+        cv2.ellipse(panel, center, (radius, radius), -90, 0, 360 * progress, GREEN, 12)
+        if label:
+            size = cv2.getTextSize(label, FONT, 1.4, 3)[0]
+            _text(panel, label, (center[0] - size[0] // 2, center[1] + size[1] // 2), 1.4, WHITE, 3)
+
+    # --- whole screen -------------------------------------------------------
+
+    def render(self, frame, view, features=None):
+        h, w = frame.shape[:2]
+        panel = np.full((h, PANEL_W, 3), DARK, dtype=np.uint8)
+        ex = view.get("exercise_display") or {}
+
+        self.draw_hand(frame, features, ex.get("finger_colors"))
+
+        # title and counters
+        _wrapped(panel, view.get("title", ""), 20, 45, PANEL_W - 40, 1.0, WHITE, 2)
+        if view.get("status"):
+            _text(panel, view["status"], (20, 120), 0.9, YELLOW, 2)
+        top = 150
+
+        stage = view.get("stage")
+        if stage == "exercise" and ex.get("kind") == "bar":
+            detail = ex.get("finger_values") or ex.get("gap_values")
+            room = h - top - 70 - 80 - (140 if detail else 0)
+            top = self._bar(panel, ex, top + 10, height=int(np.clip(room, 150, 400)))
+            if ex.get("finger_values"):
+                colors = {k: (ORANGE if ex["finger_colors"].get(k) == "lagging" else BLUE)
+                          for k in ex["finger_values"]}
+                labels = {k: FINGER_WORDS[k].replace(" finger", "") for k in ex["finger_values"]}
+                top = self._finger_bars(panel, ex["finger_values"], top, colors, labels)
+            elif ex.get("gap_values"):
+                labels = {g: g.replace("_", "-").replace("pinky", "little") for g in GAP_NAMES}
+                top = self._finger_bars(panel, ex["gap_values"], top, GAP_COLORS, labels)
+        elif stage == "exercise" and ex.get("kind") == "sequence":
+            top = self._sequence(panel, ex, top + 10)
+        elif stage == "calibrating":
+            self._ring(panel, view.get("progress", 0.0), (PANEL_W // 2, top + 130))
+        elif stage == "rest":
+            self._ring(panel, view.get("progress", 0.0), (PANEL_W // 2, top + 130),
+                       label=str(view.get("countdown", "")))
+        elif stage == "summary":
+            y = top + 20
+            for line in view.get("summary_lines", []):
+                y = _wrapped(panel, line, 20, y, PANEL_W - 40, 0.75, WHITE, 1) + 10
+
+        _text(panel, view.get("footer", ""), (20, h - 25), 0.7, GREY, 1)
+
+        # big instruction at the bottom of the camera image
+        instruction = view.get("instruction") or ex.get("prompt") or ""
+        if instruction:
+            _band(frame, h - 130, h)
+            _wrapped(frame, instruction, 30, h - 80, w - 60, 1.6, WHITE, 3)
+
+        # quality problem in yellow at the top
+        if view.get("quality"):
+            cv2.rectangle(frame, (0, 0), (w, 80), BLACK, -1)
+            _text(frame, view["quality"], (30, 55), 1.3, YELLOW, 3)
+        elif view.get("subtitle"):
+            _band(frame, 0, 70, 0.45)
+            _text(frame, view["subtitle"], (30, 48), 0.9, WHITE, 2)
+
+        if view.get("paused"):
+            _band(frame, 0, h)
+            _text(frame, "Paused", (w // 2 - 110, h // 2 - 20), 2.2, WHITE, 4)
+            _text(frame, "Press space to continue", (w // 2 - 250, h // 2 + 50), 1.2, YELLOW, 2)
+
+        return np.hstack([frame, panel])
+
+    def show(self, canvas):
+        cv2.imshow(self.window, canvas)
+
+    def close(self):
+        cv2.destroyAllWindows()
