@@ -16,6 +16,10 @@ python -m pytest tests                      # tests (synthetic hands, no camera 
 
 **Keys:** space starts, pauses and continues (and skips a rest). `q`/Esc stops.
 Speech uses `say -r 140` on macOS, `espeak` on Linux, `pyttsx3` as a fallback.
+Speech is slow, so every message is checked again just before it is spoken and skipped when
+she has already done what it asks. Calibration only starts timing a position after its prompt
+has been spoken, and a clearly wrong calibration (e.g. "open" less open than "closed") is measured
+again, also when it was stored by an earlier session.
 
 ### Exercises
 

@@ -49,13 +49,26 @@ def number_word(n):
 
 @dataclass
 class Say:
-    """Something the coach should say. Counts may be dropped if speech is busy."""
+    """
+    Something the coach should say.
+
+    Speech is slow, so a message can wait in the queue while she keeps
+    moving. `valid` (optional) is asked again just before speaking: when it
+    returns False the message is out of date (e.g. "Now close your hand."
+    after she already closed and held) and is skipped. Counts and `optional`
+    messages are dropped when the speaker is busy.
+    """
     text: str
     kind: str = "instruction"     # instruction | count | praise | hint | quality
+    valid: callable = field(default=None, repr=False, compare=False)
+    optional: bool = False
 
     @property
     def ephemeral(self):
-        return self.kind == "count"
+        return self.kind == "count" or self.optional
+
+    def still_valid(self):
+        return self.valid is None or bool(self.valid())
 
 
 @dataclass
@@ -105,6 +118,14 @@ def scale(value, lo, hi, min_range=config.CALIBRATION_MIN_RANGE):
     if abs(span) < min_range:
         span = min_range if span >= 0 else -min_range
     return (value - lo) / span
+
+
+def increases(steps, lo_step, hi_step, key, margin):
+    """True when steps[hi_step][key] is at least margin above steps[lo_step][key]."""
+    try:
+        return steps[hi_step][key] - steps[lo_step][key] >= margin
+    except (KeyError, TypeError):
+        return False
 
 
 def count_speed_peaks(times, values, rel_threshold=0.2):
@@ -222,12 +243,19 @@ class Exercise:
         self.fatigue = False
         self._hints = RateLimiter(config.HINT_REPEAT_S)
         self._last_progress_t = None
+        # set by the coach every frame: True while the speaker is talking
+        self.speaking = False
 
     # --- to override ----------------------------------------------------
 
     @classmethod
     def calibration_steps(cls):
         return []
+
+    @classmethod
+    def calibration_valid(cls, steps):
+        """False when a calibration is clearly wrong (e.g. "open" less open than "closed")."""
+        return True
 
     @property
     def reps_per_set(self):
@@ -240,6 +268,10 @@ class Exercise:
     def first_messages(self):
         """Said when a set starts (the instructions are said once, by the session)."""
         return []
+
+    def resume_messages(self):
+        """Said after a pause or a lost hand: what to do right now."""
+        return self.first_messages()
 
     def frame_problem(self, f):
         """Exercise-specific reason to pause (e.g. fingers not straight). Returns a Say or None."""
@@ -271,6 +303,10 @@ class Exercise:
         self._last_progress_t = now
 
     def _stalled(self, now):
+        if self.speaking:
+            # she is listening; the wait for a hint starts when the coach is quiet
+            self._last_progress_t = now
+            return False
         return (self._last_progress_t is not None
                 and now - self._last_progress_t >= config.HINT_DELAY_S)
 
@@ -301,6 +337,7 @@ class Phase:
     prompt: str           # said when this position is next: "Open your hand."
     label: str            # on screen: "OPEN"
     hold_s: float = None  # None -> params["hold_s"]
+    count: bool = True    # "And hold, two, three" (off for resting positions)
 
 
 class TwoPhaseExercise(Exercise):
@@ -314,7 +351,7 @@ class TwoPhaseExercise(Exercise):
     phases = ()
     best_phrase = "That's your best yet today."
     compensation_messages = {
-        "palm_rotation": "Try to keep your wrist still.",
+        "palm_rotation": "Try not to turn your hand.",
         "wrist_moved": "Try to keep your wrist still.",
     }
 
@@ -324,6 +361,7 @@ class TwoPhaseExercise(Exercise):
         self.hyst = Hysteresis(p["high"], p["low"], p["gap"])
         self._phase = 0
         self._holding = False
+        self._epoch = 0           # +1 on every interrupt: what was queued before is out of date
         self._reset_rep(None)
 
     # --- to override ----------------------------------------------------
@@ -370,12 +408,42 @@ class TwoPhaseExercise(Exercise):
         self._reset_rep(now)
 
     def first_messages(self):
-        return [Say(self.phases[0].prompt)]
+        return [self._prompt()]
+
+    def resume_messages(self):
+        return [self._prompt()]
 
     def interrupt(self, now):
         super().interrupt(now)
         self._holding = False
+        self._epoch += 1
         self.hyst.reset()
+
+    # --- what is still worth saying -----------------------------------------
+
+    def _state(self):
+        return (self.set_no, len(self.reps), self._phase, self._epoch)
+
+    def _while_phase(self):
+        """Valid until this phase is done (or the set changes)."""
+        state = self._state()
+        return lambda: self._state() == state
+
+    def _while_waiting(self):
+        """Valid while she is still not holding the current phase."""
+        state = self._state()
+        return lambda: self._state() == state and not self._holding
+
+    def _while_holding(self):
+        """Valid while this same hold goes on."""
+        start = self._hold_start
+        return lambda: self._holding and self._hold_start == start
+
+    def _prompt(self):
+        return Say(self.phases[self._phase].prompt, valid=self._while_phase())
+
+    def _counting(self, phase):
+        return self.params.get("count_aloud") and phase.count
 
     def update(self, f, now):
         out = []
@@ -416,10 +484,10 @@ class TwoPhaseExercise(Exercise):
                     rep["smoothness"] = count_speed_peaks([s[0] for s in samples],
                                                           [s[1] for s in samples])
                     rep["movement_samples"] = None
-                if self.params.get("count_aloud"):
-                    out.append(Say("And hold.", "count"))
+                if self._counting(phase):
+                    out.append(Say("And hold.", "count", valid=self._while_holding()))
             elif self._stalled(now) and self._hints.ready("stall", now):
-                out.append(Say(self.stall_hint(f), "hint"))
+                out.append(Say(self.stall_hint(f), "hint", valid=self._while_waiting()))
                 rep["hints"] += 1
                 self._progress(now)
         else:
@@ -427,17 +495,17 @@ class TwoPhaseExercise(Exercise):
                 self._holding = False
                 self._progress(now)
                 if self._hints.ready("hold", now):
-                    out.append(Say("Hold it a little longer.", "hint"))
+                    out.append(Say("Hold it a little longer.", "hint", valid=self._while_waiting()))
                     rep["hints"] += 1
             else:
                 held = now - self._hold_start
                 if held >= HOLD_SETTLE_S:       # ignore the tail of the movement into the hold
                     rep["hold_values"][self._phase].append(value)
-                if self.params.get("count_aloud"):
+                if self._counting(phase):
                     k = int(held)
                     if k > self._counted and held < self.hold_time(phase):
                         self._counted = k
-                        out.append(Say(number_word(k + 1), "count"))
+                        out.append(Say(number_word(k + 1), "count", valid=self._while_holding()))
                 if held >= self.hold_time(phase):
                     out += self._phase_complete(f, now)
 
@@ -453,11 +521,14 @@ class TwoPhaseExercise(Exercise):
             self._phase = 1
             rep["phase_done_t"] = now
             rep["movement_samples"] = [(now, rep["values"][-1])]
-            out.append(Say(self.phases[1].prompt))
+            out.append(self._prompt())
         else:
             out += self._finish_rep(now)
             self._phase = 0
-            out.append(Say(self.phases[0].prompt))
+            # after the last rep of a set the session speaks next; asking for
+            # another rep here would be wrong
+            if not self.set_done:
+                out.append(self._prompt())
         return out
 
     def _finish_rep(self, now):
@@ -488,7 +559,8 @@ class TwoPhaseExercise(Exercise):
                    **self.rep_extra()},
         )
         self._add_rep(rec)
-        out = [Say(f"{number_word(rec.rep_no)}.", "praise")]
+        # "That's three." (a bare "three." sounds like the hold count)
+        out = [Say(f"That's {number_word(rec.rep_no)}.", "praise")]
         if prev_best is not None and rec.range_high > prev_best + 0.02:
             out.append(Say(self.best_phrase, "praise"))
         self._reset_rep(now)
@@ -626,7 +698,7 @@ class SequenceExercise(Exercise):
         out = []
         if self.mode == "memory":
             words = ", ".join(FINGER_WORDS[s].replace(" finger", "") for s in seq)
-            out.append(Say(f"Remember: {words}."))
+            out.append(Say(f"Remember: {words}.", valid=self._while_round()))
             self._round["hidden"] = False
         else:
             out.append(self._target_say())
@@ -636,8 +708,29 @@ class SequenceExercise(Exercise):
         r = self._round
         return r["seq"][r["step"]]
 
-    def _target_say(self):
-        return Say(f"{self.action_word} your {FINGER_WORDS[self._target()]}.")
+    def _while_round(self):
+        r = self._round
+        return lambda: self._round is r
+
+    def _while_step(self):
+        """Valid until she moves on to the next finger."""
+        r, step = self._round, self._round["step"]
+        return lambda: self._round is r and r["step"] == step
+
+    def _target_say(self, kind="instruction"):
+        return Say(f"{self.action_word} your {FINGER_WORDS[self._target()]}.", kind,
+                   valid=self._while_step())
+
+    def resume_messages(self):
+        r = self._round
+        if r is None:
+            return []       # the next round announces itself
+        if self.mode == "memory" and not r["revealed"]:
+            if not r["hidden"]:
+                words = ", ".join(FINGER_WORDS[s].replace(" finger", "") for s in r["seq"])
+                return [Say(f"Remember: {words}.", valid=self._while_round())]
+            return [Say("Which finger comes next?", valid=self._while_step())]
+        return [self._target_say()]
 
     def interrupt(self, now):
         super().interrupt(now)
@@ -651,11 +744,14 @@ class SequenceExercise(Exercise):
             self._progress(now)
 
         r = self._round
+        if self.mode == "memory" and not r["hidden"] and self.speaking:
+            # the sequence is shown for memory_show_s after she has heard it
+            r["show_until"] = max(r["show_until"], now + self.params.get("memory_show_s", 5.0))
         if self.mode == "memory" and not r["hidden"] and not r["revealed"] and now >= r["show_until"]:
             r["hidden"] = True
             r["step_start"] = now
             self._progress(now)
-            out.append(Say("Now you."))
+            out.append(Say("Now you.", valid=self._while_step()))
 
         events = self.detect(f, now)
         for kind, finger, info in events:
@@ -673,11 +769,11 @@ class SequenceExercise(Exercise):
             r["hints"] += 1
             self._progress(now)
             if self.mode == "memory" and r["hidden"] and not r["revealed"] and r["hints"] == 1:
-                out.append(Say("Which finger comes next?", "hint"))
+                out.append(Say("Which finger comes next?", "hint", valid=self._while_step()))
             else:
                 if self.mode == "memory":
                     r["revealed"] = True        # show the target instead of failing
-                out.append(Say(self._target_say().text, "hint"))
+                out.append(self._target_say("hint"))
 
         self.display = self._make_display(f)
         return out
@@ -695,14 +791,14 @@ class SequenceExercise(Exercise):
                 return self._finish_round(now)
             if self.mode in ("guided", "called_out") or r["revealed"]:
                 return [self._target_say()]
-            return [Say("Good.", "count")]
+            return [Say("Good.", "count", valid=self._while_step())]
         r["wrong"] += 1
         if self.mode == "memory" and r["hidden"] and not r["revealed"]:
             # don't give the answer away, just invite another try
             text = f"That was your {FINGER_WORDS[finger]}. Let's try again."
         else:
             text = self.wrong_phrase.format(got=FINGER_WORDS[finger], want=FINGER_WORDS[target])
-        return [Say(text, "hint")]
+        return [Say(text, "hint", valid=self._while_step())]
 
     def _finish_round(self, now):
         r = self._round

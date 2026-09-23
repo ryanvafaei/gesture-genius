@@ -75,7 +75,7 @@ def test_grip_counts_aloud_and_names_rep(grip_cal):
     said = texts(grip_rep(ex, clock))
     assert "And hold." in said and "two" in said
     assert "Now close your hand." in said
-    assert "one." in said
+    assert "That's one." in said
 
 
 def test_grip_hint_after_stall_names_lagging_finger(grip_cal):
@@ -101,7 +101,7 @@ def test_grip_detects_wrist_rotation(grip_cal):
         a = np.radians(40 * i / 59)
         f.palm_normal_image = np.array([np.sin(a), 0, -np.cos(a)])
         said += ex.update(f, t)
-    assert "Try to keep your wrist still." in texts(said)
+    assert "Try not to turn your hand." in texts(said)
 
 
 def test_grip_fatigue(grip_cal):

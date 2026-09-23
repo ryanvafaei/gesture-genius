@@ -11,7 +11,7 @@ import numpy as np
 
 from rehab.features import GAPS, GAP_NAMES
 from rehab.exercises.base import (CalibrationStep, FINGER_WORDS, Phase, Say,
-                                  TwoPhaseExercise, scale)
+                                  TwoPhaseExercise, increases, scale)
 
 ANGLE_MIN_RANGE = 3.0     # degrees
 
@@ -45,6 +45,10 @@ class FingerAbduction(TwoPhaseExercise):
             CalibrationStep("spread", "Now spread your fingers as wide as you comfortably can. And hold.",
                             _spread, need_palm_facing=True, screen_text="Spread wide and hold"),
         ]
+
+    @classmethod
+    def calibration_valid(cls, steps):
+        return increases(steps, "together", "spread", "total", ANGLE_MIN_RANGE / 2)
 
     def __init__(self, *args, grip_calibration=None, **kwargs):
         super().__init__(*args, **kwargs)

@@ -49,7 +49,8 @@ def main():
     routine = None
     if args.calibrate > 0:
         routine = CalibrationRoutine(EXERCISES[args.exercise],
-                                     settle_s=1.0, hold_s=min(config.CALIBRATION_HOLD_S, args.calibrate / 4))
+                                     settle_s=1.0, hold_s=min(config.CALIBRATION_HOLD_S, args.calibrate / 4),
+                                     max_attempts=1)     # a recording can't redo it
     elif args.exercise not in cals:
         p.error(f"no calibration for {args.exercise} in {args.profile}; use --calibrate N")
 

@@ -4,14 +4,16 @@ Act: speech and drawing.
 Speaker   non-blocking text-to-speech in its own thread, slow rate
           (`say -r 140` on macOS, espeak elsewhere, pyttsx3 as fallback).
           Counts are dropped when speech is busy so she never hears
-          a backlog of old numbers.
+          a backlog of old numbers, and every message is checked again
+          just before it is spoken: one that is out of date by then
+          (she already did what it asks) is skipped.
 Display   camera image with the hand skeleton plus a side panel:
           a large bar with the target line, per-finger detail, the
           finger sequence, and big high-contrast text. Whatever is said
           is also shown as a subtitle.
 """
 
-import queue
+import collections
 import shutil
 import subprocess
 import sys
@@ -31,6 +33,21 @@ from rehab.features import FINGER_LANDMARKS, GAP_NAMES, THUMB, WRIST
 # ---------------------------------------------------------------------------
 
 
+# Dropped first when the queue is full; instructions and session messages last.
+DROP_FIRST = ("count", "praise", "hint")
+
+
+def enqueue(items, msg, max_queue):
+    """Add msg to the deque `items`, making room by dropping the least important old message."""
+    # out of date, or the same words again (e.g. a prompt repeated after a lost hand)
+    for m in [m for m in items if not m.still_valid() or m.text == msg.text]:
+        items.remove(m)
+    while len(items) >= max_queue:
+        victim = next((m for m in items if m.ephemeral or m.kind in DROP_FIRST), items[0])
+        items.remove(victim)
+    items.append(msg)
+
+
 class Speaker:
 
     def __init__(self, enabled=config.SPEECH_ENABLED, rate=config.SPEECH_RATE, max_queue=3):
@@ -39,8 +56,9 @@ class Speaker:
         self.max_queue = max_queue
         self.last_text = ""
         self.last_time = 0.0
-        self._queue = queue.Queue()
-        self._busy = threading.Event()
+        self._items = collections.deque()
+        self._cond = threading.Condition()
+        self._speaking = False
         self._stop = threading.Event()
         self._proc = None
         self._engine = None
@@ -58,37 +76,44 @@ class Speaker:
 
     @property
     def busy(self):
-        return self._busy.is_set() or not self._queue.empty()
+        with self._cond:
+            return self._speaking or bool(self._items)
 
     def say(self, msg):
         if isinstance(msg, str):
             msg = Say(msg)
-        if msg.ephemeral and self.busy:
-            return
-        if self._queue.qsize() >= self.max_queue:
-            try:
-                self._queue.get_nowait()        # drop the oldest, keep what is current
-            except queue.Empty:
-                pass
-        self._queue.put(msg)
+        with self._cond:
+            if msg.ephemeral and (self._speaking or self._items):
+                return
+            enqueue(self._items, msg, self.max_queue)
+            self._cond.notify()
 
     def say_all(self, messages):
         for m in messages or []:
             self.say(m)
 
+    def clear(self):
+        """Forget everything not yet spoken (e.g. on pause)."""
+        with self._cond:
+            self._items.clear()
+
     def _run(self):
         while not self._stop.is_set():
-            try:
-                msg = self._queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            self._busy.set()
+            with self._cond:
+                if not self._items:
+                    self._cond.wait(timeout=0.1)
+                    continue
+                msg = self._items.popleft()
+                if not msg.still_valid():
+                    continue
+                self._speaking = True       # set together with the pop: busy never blinks off
             self.last_text = msg.text
             self.last_time = time.monotonic()
             try:
                 self._speak(msg.text)
             finally:
-                self._busy.clear()
+                with self._cond:
+                    self._speaking = False
 
     def _speak(self, text):
         if not self.enabled:
@@ -134,10 +159,15 @@ class SilentSpeaker(Speaker):
     def say(self, msg):
         if isinstance(msg, str):
             msg = Say(msg)
+        if not msg.still_valid():
+            return
         self.spoken.append(msg)
         self.last_text = msg.text
         if self.echo:
             print(f"[coach] {msg.text}")
+
+    def clear(self):
+        pass
 
     def close(self):
         pass

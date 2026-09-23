@@ -9,7 +9,8 @@ object (0) and her squeeze (1). The object hides parts of the fingers, so the
 thresholds in config are looser.
 """
 
-from rehab.exercises.base import CalibrationStep, Phase, TwoPhaseExercise, scale
+from rehab.exercises.base import (CalibrationStep, Phase, TwoPhaseExercise,
+                                  increases, scale)
 
 
 def _closure(f):
@@ -31,7 +32,9 @@ class GripSqueeze(TwoPhaseExercise):
         super().__init__(*args, **kwargs)
         self.phases = (
             Phase("squeeze", "high", "Squeeze.", "SQUEEZE", self.params["hold_s"]),
-            Phase("relax", "low", "And relax.", "RELAX", self.params.get("relax_s", self.params["hold_s"])),
+            # no "And hold, two, three" while she should be letting go
+            Phase("relax", "low", "And relax.", "RELAX", self.params.get("relax_s", self.params["hold_s"]),
+                  count=False),
         )
 
     @classmethod
@@ -42,6 +45,10 @@ class GripSqueeze(TwoPhaseExercise):
             CalibrationStep("squeeze", "Now squeeze it as firmly as is comfortable. And hold.",
                             _closure, screen_text="Squeeze and hold"),
         ]
+
+    @classmethod
+    def calibration_valid(cls, steps):
+        return increases(steps, "hold", "squeeze", "closure", 0.01)
 
     def metric(self, f):
         lo = self.cal.get("hold", {}).get("closure", 0.5)
@@ -59,7 +66,7 @@ class GripSqueeze(TwoPhaseExercise):
 
     def stall_hint(self, f):
         if self.phases[self._phase].key == "relax":
-            return "Let your hand relax completely."
+            return "Loosen your grip, but keep holding the cloth."
         return "Squeeze the cloth a little."
 
     def rep_extra(self):
