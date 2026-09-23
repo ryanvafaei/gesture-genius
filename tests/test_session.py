@@ -146,3 +146,60 @@ def test_progression_raises_target_after_good_session(log, monkeypatch):
                        for i in (1, 2)]
     s._record_summary()
     assert profile["thresholds"]["grip_release"]["high"] == pytest.approx(0.73)
+
+
+def _menu_session(log, **kw):
+    s = SessionManager(SilentSpeaker(), storage.new_profile(), log, **kw)
+    clock = Clock()
+    s.update(feat(clock.t), clock.t)
+    return s, clock
+
+
+def test_menu_number_picks_one_exercise(log):
+    s, clock = _menu_session(log)
+    assert s.stage == "menu"
+    items = s.view()["menu"]
+    assert items[0]["text"] == "All of today's exercises" and items[0]["selected"]
+    assert [i["key"] for i in items] == [str(i) for i in range(len(config.SESSION_ORDER) + 1)]
+    number = config.SESSION_ORDER.index("thumb_flexion") + 1
+    s.on_key(str(number), clock.t)
+    assert s.stage == "intro" and s.plan == ["thumb_flexion"]
+    assert s.view()["title"] == "Bend and stretch your thumb"
+
+
+def test_menu_arrows_and_space(log):
+    s, clock = _menu_session(log)
+    s.on_key("up", clock.t)                   # wraps to the last exercise
+    assert s.view()["menu"][-1]["selected"]
+    s.on_key("down", clock.t)
+    s.on_key("down", clock.t)
+    s.on_key(" ", clock.t)
+    assert s.plan == [config.SESSION_ORDER[0]]
+
+
+def test_menu_space_starts_todays_session(log):
+    s, clock = _menu_session(log)
+    s.on_key(" ", clock.t)
+    assert s.plan == s.today and s.name == config.SESSION_ORDER[0]
+
+
+def test_menu_back_and_after_summary(log, monkeypatch):
+    monkeypatch.setitem(config.EXERCISES, "grip_release",
+                        dict(config.EXERCISES["grip_release"], sets=1, reps=1))
+    s, clock = _menu_session(log)
+    s.on_key("2", clock.t)
+    s.on_key("m", clock.t)                    # changed her mind
+    assert s.stage == "menu" and s.calibration is None
+
+    s.on_key("1", clock.t)
+    for _ in range(int(10 * 30)):
+        t = clock.tick()
+        s.update(feat(t), t)
+    for pose in (OPEN, CLOSED, OPEN, CLOSED):
+        for _ in range(int(5.5 * 30)):
+            t = clock.tick()
+            s.update(feat(t, flex=pose), t)
+    assert s.stage == "summary"
+    assert log.history("grip_release")[0]["reps_done"] == "1"
+    s.on_key(" ", clock.t)
+    assert s.stage == "menu" and not s.done

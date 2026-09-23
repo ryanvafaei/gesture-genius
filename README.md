@@ -7,14 +7,16 @@ The built-in gesture recognizer is still in the pipeline, but only as a logged s
 
 ```bash
 pip install -r requirements.txt
-python main.py                              # full session
-python main.py --exercise grip_release      # one exercise
+python main.py                              # starts with a menu to choose the exercise
+python main.py --exercise grip_release      # one exercise, no menu
 python main.py --video recording.mp4        # run on a recording
 python main.py --no-speech                  # print instead of speaking
 python -m pytest tests                      # tests (synthetic hands, no camera needed)
 ```
 
 **Keys:** space starts, pauses and continues (and skips a rest). `q`/Esc stops.
+In the menu, press a number (`1`–`6`) to pick one exercise, or `0` / space for all of today's
+exercises; the up and down arrows move the highlight. `m` goes back to the menu at any time.
 Speech uses `say -r 140` on macOS, `espeak` on Linux, `pyttsx3` as a fallback.
 
 ### Exercises
@@ -34,9 +36,10 @@ and exercise-specific details (lagging finger, isolation score, correct/wrong to
 
 ### Session flow
 
-greeting → for each exercise: short instruction → calibration (first time, or when older than
+greeting → menu (one exercise, or all of today's) → for each exercise: short instruction → calibration (first time, or when older than
 14 days; otherwise space within 6 s to recalibrate) → sets with rests → summary with a progress
-message compared with her own earlier sessions ("Your hand opened 12% wider than last week").
+message compared with her own earlier sessions ("Your hand opened 12% wider than last week")
+→ space returns to the menu to choose another exercise.
 When her range drops over several reps the coach offers a rest. After a good session the target
 is raised a little (`AUTO_PROGRESSION` in `rehab/config.py`, which a therapist can switch off).
 
