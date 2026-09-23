@@ -6,11 +6,14 @@ Hand rehabilitation coach for Eleanor.
     python main.py --video test.mp4         run on a recording instead of the webcam
     python main.py --no-speech              print instead of speaking
 
-Without --exercise it starts with a menu: press a number (or up/down and
-space) to pick one exercise, or space for all of today's exercises.
+It opens with a greeting and a check-in ("How is your hand feeling today?"),
+answered with thumbs up / thumbs down (or space = yes, n = no). Without
+--exercise it then shows a menu: press a number (or up/down and space) to
+pick one exercise, space for all of today's exercises, or "Finish for today"
+to see the garden and say goodbye.
 
-Keys: space = start / pause / continue, m = back to the menu,
-q or Esc = stop.
+Keys: space = start / pause / continue, y / n = yes / no, m = back to the
+menu, q or Esc = stop (what was done is kept).
 
 Wiring only: Sense -> features -> Think (Coach + SessionManager) -> Act.
 Nothing imports this file.
@@ -23,6 +26,7 @@ import cv2
 from rehab import config, features, storage
 from rehab.Act import Display, SilentSpeaker, Speaker
 from rehab.exercises import EXERCISES
+from rehab.feedback import Feedback
 from rehab.filters import FeatureFilter
 from rehab.Sense import Sense
 from rehab.Think import SessionManager
@@ -65,12 +69,18 @@ def main():
 
     sense = Sense(args.video if args.video else args.camera,
                   mirror=not args.no_mirror)
-    speaker = SilentSpeaker(echo=True) if args.no_speech else Speaker()
-    display = Display()
     profile = storage.load_profile()
+    character = storage.load_content("character")
+    feedback = Feedback(name=profile["name"], coach=profile.get("coach_name"))
+    speaker = (SilentSpeaker(echo=True, feedback=feedback) if args.no_speech else
+               Speaker(rate=profile.get("voice_rate", config.SPEECH_RATE),
+                       voice=profile.get("voice"), feedback=feedback))
+    display = Display(character=character, feedback=feedback)
     log = storage.SessionLog()
     session = SessionManager(speaker, profile, log, exercises=args.exercise,
-                             save_profile=storage.save_profile)
+                             save_profile=storage.save_profile,
+                             garden=storage.load_garden(), save_garden=storage.save_garden,
+                             character=character)
     smoother = FeatureFilter(config.ONE_EURO_MIN_CUTOFF, config.ONE_EURO_BETA,
                              config.ONE_EURO_D_CUTOFF)
     hand = profile.get("affected_hand", config.AFFECTED_HAND)
@@ -88,8 +98,9 @@ def main():
             f = features.extract(obs, t, (frame.shape[1], frame.shape[0]), hand)
             features.smooth(f, smoother)
 
-            # Think
-            session.update(f, t)
+            # Think (thumbs up / down count from either hand)
+            gestures = [(o.gesture, o.gesture_score) for o in observations if o.gesture]
+            session.update(f, t, gestures)
 
             # Act
             display.show(display.render(frame, session.view(), f))

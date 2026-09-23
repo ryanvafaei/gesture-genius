@@ -15,7 +15,8 @@ from rehab.exercises.base import Say
 from rehab.exercises.grip_release import GripRelease
 from rehab.exercises.grip_squeeze import GripSqueeze
 from rehab.Think import SessionManager
-from helpers import Clock, TimedSpeaker, calibrate, feat, lerp, run, texts
+from helpers import (Clock, TimedSpeaker, answer, calibrate, feat, lerp, returning_profile, run,
+                     texts)
 
 OPEN, CLOSED = (25, 35, 20), (60, 80, 50)
 MID = lerp(OPEN, CLOSED, 0.5)
@@ -53,7 +54,7 @@ def session(log, profile=None, **kw):
         heard_in_phase.append((msg.text, phase))
 
     speaker = TimedSpeaker(clock, on_speak=on_speak)
-    profile = profile or storage.new_profile()
+    profile = profile or returning_profile()
     s = SessionManager(speaker, profile, log, exercises=["grip_release"], **kw)
 
     def go(seconds):
@@ -61,10 +62,14 @@ def session(log, profile=None, **kw):
             t = clock.tick()
             speaker.advance()
             s.update(feat(t, **patient.step()), t)
-            if s.stage == "greeting" and not speaker.busy:
-                s.on_key(" ", t)
+            if not speaker.busy:
+                answer(s, t)
 
     return s, speaker, profile, heard_in_phase, go, clock
+
+
+# greeting, check-in and today's plan before the first exercise
+OPENING_S = 20
 
 
 def _log(tmp_path):
@@ -73,7 +78,7 @@ def _log(tmp_path):
 
 def test_calibration_waits_for_the_spoken_prompt(tmp_path):
     s, speaker, profile, _, go, _ = session(_log(tmp_path))
-    go(50)
+    go(OPENING_S + 50)
     assert s.stage == "exercise"
     steps = profile["calibration"]["grip_release"]["steps"]
     # measured in the right order: "open" really is the open hand
@@ -85,7 +90,7 @@ def test_prompts_match_the_phase_she_is_in(tmp_path, monkeypatch):
     monkeypatch.setitem(config.EXERCISES, "grip_release",
                         dict(config.EXERCISES["grip_release"], sets=1, reps=5))
     s, speaker, _, heard, go, _ = session(_log(tmp_path))
-    go(120)
+    go(OPENING_S + 120)
     assert len(s.exercise.reps) == 5            # she can follow the voice alone
     prompts = {"Open your hand wide.": "open", "Now close your hand.": "close"}
     said = [(text, phase) for text, phase in heard if text in prompts]
@@ -98,7 +103,7 @@ def test_no_new_rep_asked_for_at_the_end_of_a_set(tmp_path, monkeypatch):
     monkeypatch.setitem(config.EXERCISES, "grip_release",
                         dict(config.EXERCISES["grip_release"], sets=2, reps=2))
     s, speaker, _, _, go, _ = session(_log(tmp_path))
-    go(80)
+    go(OPENING_S + 80)
     heard = [t for _, t in speaker.heard]
     end = heard.index("Well done. That was set one of two.")
     assert heard[end - 1] == "That's two."
@@ -106,14 +111,14 @@ def test_no_new_rep_asked_for_at_the_end_of_a_set(tmp_path, monkeypatch):
 
 
 def test_stored_reversed_calibration_is_measured_again(tmp_path):
-    profile = storage.new_profile()
+    profile = returning_profile()
     fingers = ("index", "middle", "ring", "pinky", "mean")
     profile["calibration"]["grip_release"] = {
         "date": storage.date.today().isoformat(),
         "steps": {"open": {k: .3 for k in fingers}, "closed": {k: .8 for k in fingers}},
     }
     s, speaker, profile, _, go, _ = session(_log(tmp_path), profile=profile)
-    go(20)
+    go(OPENING_S + 20)
     assert s.stage == "calibrating"
     go(30)
     assert s.stage == "exercise"
@@ -146,7 +151,7 @@ def test_calibration_settle_starts_after_speech():
 
 def test_pause_clears_old_speech_and_resume_repeats_the_prompt(tmp_path):
     s, speaker, _, _, go, clock = session(_log(tmp_path))
-    go(50)
+    go(OPENING_S + 50)
     assert s.stage == "exercise"
     speaker.say(Say("Now close your hand."))
     s.on_key(" ", clock.t)
@@ -159,7 +164,7 @@ def test_pause_clears_old_speech_and_resume_repeats_the_prompt(tmp_path):
 
 def test_prompt_repeated_when_the_hand_comes_back(tmp_path):
     s, speaker, _, _, go, clock = session(_log(tmp_path))
-    go(50)
+    go(OPENING_S + 50)
     assert s.stage == "exercise"
     for _ in range(90):                           # hand gone for 3 s
         t = clock.tick()

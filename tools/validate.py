@@ -79,7 +79,7 @@ def main():
                 cals[args.exercise] = routine.result
             continue
         if coach is None:
-            exercise = create(args.exercise, cals, profile.get("thresholds"),
+            exercise = create(args.exercise, cals, profile.get("targets"),
                               params={"reps": 10 ** 6, "sets": 1})
             coach = Coach(exercise, speaker, None, hand)
             coach.start_set(1, t)

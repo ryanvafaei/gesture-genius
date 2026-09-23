@@ -7,7 +7,7 @@ from rehab.Act import SilentSpeaker
 from rehab.exercises.base import RepRecord
 from rehab.exercises.grip_release import GripRelease
 from rehab.Think import SessionManager
-from helpers import Clock, feat
+from helpers import Clock, answer, feat, returning_profile
 
 OPEN, CLOSED = (25, 35, 20), (60, 80, 50)
 
@@ -61,14 +61,17 @@ def test_every_other_day(log):
 
 
 def test_full_session_one_exercise(tmp_path, log, monkeypatch):
+    """First session ever, from choosing the coach's name to the garden and goodbye."""
     monkeypatch.setitem(config.EXERCISES, "grip_release",
                         dict(config.EXERCISES["grip_release"], sets=2, reps=2))
     monkeypatch.setattr(config, "REST_BETWEEN_SETS_S", 2)
     profile = storage.new_profile()
-    saved = []
+    garden = storage.new_garden()
+    saved, gardens = [], []
     speaker = SilentSpeaker()
     s = SessionManager(speaker, profile, log, exercises=["grip_release"],
-                       save_profile=lambda p: saved.append(True))
+                       save_profile=lambda p: saved.append(True), garden=garden,
+                       save_garden=lambda g: gardens.append(dict(g)))
     clock = Clock()
 
     def run(seconds, **pose):
@@ -77,9 +80,23 @@ def test_full_session_one_exercise(tmp_path, log, monkeypatch):
             s.update(feat(t, **pose), t)
 
     run(0.5)
+    assert s.stage == "setup_name"
+    s.on_key("n", clock.t)                    # not the first name ...
+    s.on_key("y", clock.t)                    # ... the second
+    assert profile["coach_name"] == "Robin"
     assert s.stage == "greeting"
-    s.on_key(" ", clock.t)
+    assert "I'm Robin" in speaker.last_text
+    run(1.5)
+    assert s.stage == "setup_activities"
+    for yes in (True, False, True, True):     # three favourites
+        answer(s, clock.t, yes)
+    assert profile["chosen_activities"] == ["gardening", "cooking", "reading"]
+    assert s.stage == "check_in"
+    answer(s, clock.t)
+    assert s.stage == "today_plan"
+    run(1.5)
     assert s.stage == "intro"
+    assert s.activity == "gardening"          # her favourite comes first
     run(10)
     assert s.stage == "calibrating"           # no calibration yet
     run(5.5, flex=OPEN)
@@ -112,13 +129,52 @@ def test_full_session_one_exercise(tmp_path, log, monkeypatch):
     assert s.stage == "summary"
     assert log.history("grip_release")[0]["reps_done"] == "4"
     assert len(log.rep_path.read_text().strip().splitlines()) == 5
-    assert "Well done" in speaker.last_text
+    assert "I've saved today as your starting point." in [m.text for m in speaker.spoken]
+    assert speaker.chimes == 4
+    s.on_key(" ", clock.t)
+    assert s.stage == "plant_choice"          # the first seed: she picks the plant
+    s.on_key("y", clock.t)
+    assert s.stage == "garden"
+    assert garden["plots"] == [{"plant": "rose", "stage": 0}] and gardens
+    assert "rose seed" in speaker.last_text
+    s.on_key(" ", clock.t)
+    assert s.stage == "goodbye"
+    assert "keep your rose growing" in speaker.last_text
     s.on_key(" ", clock.t)
     assert s.done
 
+    session = log.sessions()[0]
+    assert session["total_reps"] == "4" and session["difficult_day"] == "no"
+    assert session["check_in"] == "good" and session["garden"] == "rose:0"
+    last = profile["last_session"]
+    assert last["date"] == date.today().isoformat() and last["exercises"] == ["grip_release"]
+    assert profile["targets"]["grip_release"]["high"] > config.EXERCISES["grip_release"]["high"]
+
+
+def test_quit_mid_session_keeps_the_data(log, monkeypatch):
+    monkeypatch.setitem(config.EXERCISES, "grip_release",
+                        dict(config.EXERCISES["grip_release"], sets=2, reps=2))
+    profile = returning_profile()
+    profile["calibration"]["grip_release"] = {
+        "date": date.today().isoformat(),
+        "steps": {"open": {"index": .8, "middle": .8, "ring": .8, "pinky": .8, "mean": .8},
+                  "closed": {"index": .3, "middle": .3, "ring": .3, "pinky": .3, "mean": .3}},
+    }
+    s = SessionManager(SilentSpeaker(), profile, log, exercises=["grip_release"])
+    s.index = 0
+    s._build_exercise()
+    s.stage = "exercise"
+    s.set_no = 1
+    s.exercise.reps = [RepRecord("grip_release", 1, 1, 0, 1, range_high=0.9, raw_high=0.6)]
+    s.stop(1.0)                               # "q" in the middle of the first set
+    assert log.history("grip_release")[0]["reps_done"] == "1"
+    assert log.sessions()[0]["exercises"] == "grip_release"
+    assert profile["last_session"]["exercises"] == ["grip_release"]
+    assert s.garden["plots"] == []            # nothing completed: the garden just waits
+
 
 def test_recalibration_offer_times_out_to_exercise(log):
-    profile = storage.new_profile()
+    profile = returning_profile()
     profile["calibration"]["grip_release"] = {
         "date": date.today().isoformat(),
         "steps": {"open": {"index": .8, "middle": .8, "ring": .8, "pinky": .8, "mean": .8},
@@ -127,31 +183,64 @@ def test_recalibration_offer_times_out_to_exercise(log):
     s = SessionManager(SilentSpeaker(), profile, log, exercises=["grip_release"])
     clock = Clock()
     s.update(feat(clock.t), clock.t)
-    s.on_key(" ", clock.t)
+    s.on_key(" ", clock.t)                    # greeting
+    answer(s, clock.t)                        # check-in
+    s.on_key(" ", clock.t)                    # today's plan
+    assert s.stage == "intro"
     for _ in range(int((10 + config.RECALIBRATION_OFFER_S + 1) * 30)):
         t = clock.tick()
         s.update(feat(t), t)
     assert s.stage == "exercise"
 
 
-def test_progression_raises_target_after_good_session(log, monkeypatch):
-    monkeypatch.setitem(config.EXERCISES, "grip_release",
-                        dict(config.EXERCISES["grip_release"], sets=1, reps=2))
-    profile = storage.new_profile()
-    s = SessionManager(SilentSpeaker(), profile, log, exercises=["grip_release"])
+def _set_of(s, successes, failures=0, hold=0.8):
+    """Finish a set with the given numbers of successful and hinted reps."""
+    ex = s.exercise
+    s.set_no += 1
+    ex.set_no = s.set_no
+    reps = [RepRecord("grip_release", s.set_no, i, 0, 1, range_high=hold + 0.05,
+                      hold_value=hold, hold_raw=0.5, success=i <= successes)
+            for i in range(1, successes + failures + 1)]
+    ex.reps += reps
+    s.stage = "exercise"
+    s._set_finished(0.0)
+
+
+def test_target_changes_once_per_set(log):
+    s = SessionManager(SilentSpeaker(), returning_profile(), log, exercises=["grip_release"])
     s.index = 0
     s._build_exercise()
-    s.set_no = 1
-    s.exercise.reps = [RepRecord("grip_release", 1, i, 0, 1, range_high=0.95, raw_high=0.6)
-                       for i in (1, 2)]
+    start = s.exercise.target
+    assert start == config.EXERCISES["grip_release"]["high"]    # first time: the default
+    _set_of(s, 5)                             # 100%: up one step
+    assert s.exercise.target == pytest.approx(start + config.TARGET_STEP)
+    assert s.exercise.hyst.high == s.exercise.target
+    _set_of(s, 3, 2)                          # 60%: keep
+    assert s.exercise.target == pytest.approx(start + config.TARGET_STEP)
+
+
+def test_target_lowered_silently_and_saved_at_session_end(log):
+    profile = returning_profile()
+    speaker = SilentSpeaker()
+    s = SessionManager(speaker, profile, log, exercises=["grip_release"])
+    s.index = 0
+    s._build_exercise()
+    start = s.exercise.target
+    _set_of(s, 1, 3)                          # 25%: down one step, nothing said about it
+    assert s.exercise.target == pytest.approx(start - config.TARGET_STEP)
+    said = [m.text for m in speaker.spoken]
+    assert not any("stretch" in t or "further" in t for t in said)
     s._record_summary()
-    assert profile["thresholds"]["grip_release"]["high"] == pytest.approx(0.73)
+    s.end_session()
+    assert profile["targets"]["grip_release"]["high"] == pytest.approx(start - config.TARGET_STEP)
 
 
 def _menu_session(log, **kw):
-    s = SessionManager(SilentSpeaker(), storage.new_profile(), log, **kw)
+    s = SessionManager(SilentSpeaker(), returning_profile(), log, **kw)
     clock = Clock()
     s.update(feat(clock.t), clock.t)
+    s.on_key(" ", clock.t)                    # after the greeting
+    answer(s, clock.t)                        # check-in
     return s, clock
 
 
@@ -160,7 +249,8 @@ def test_menu_number_picks_one_exercise(log):
     assert s.stage == "menu"
     items = s.view()["menu"]
     assert items[0]["text"] == "All of today's exercises" and items[0]["selected"]
-    assert [i["key"] for i in items] == [str(i) for i in range(len(config.SESSION_ORDER) + 1)]
+    assert [i["key"] for i in items] == [str(i) for i in range(len(config.SESSION_ORDER) + 2)]
+    assert items[-1]["text"] == "Finish for today"
     number = config.SESSION_ORDER.index("thumb_flexion") + 1
     s.on_key(str(number), clock.t)
     assert s.stage == "intro" and s.plan == ["thumb_flexion"]
@@ -180,7 +270,10 @@ def test_menu_arrows_and_space(log):
 def test_menu_space_starts_todays_session(log):
     s, clock = _menu_session(log)
     s.on_key(" ", clock.t)
-    assert s.plan == s.today and s.name == config.SESSION_ORDER[0]
+    assert s.stage == "today_plan" and s.plan == s.today
+    assert s.view()["can"] == {"sections": len(s.today), "filled": 0}
+    s.on_key(" ", clock.t)
+    assert s.name == config.SESSION_ORDER[0]
 
 
 def test_menu_back_and_after_summary(log, monkeypatch):

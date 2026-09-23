@@ -6,4 +6,4 @@ pandas
 matplotlib
 transitions
 OneEuroFilter
-pygame-ce
+pygame-cepillow

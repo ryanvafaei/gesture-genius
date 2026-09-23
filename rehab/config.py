@@ -22,6 +22,12 @@ DATA_DIR = ROOT_DIR / "data"
 PROFILE_PATH = DATA_DIR / "profile.json"
 REP_LOG_PATH = DATA_DIR / "reps.csv"
 HISTORY_PATH = DATA_DIR / "history.csv"
+SESSIONS_PATH = DATA_DIR / "sessions.csv"
+GARDEN_PATH = DATA_DIR / "garden.json"
+CONTENT_DIR = ROOT_DIR / "content"
+ASSETS_DIR = ROOT_DIR / "assets"
+FONT_REGULAR = ASSETS_DIR / "fonts" / "AtkinsonHyperlegible-Regular.ttf"
+FONT_BOLD = ASSETS_DIR / "fonts" / "AtkinsonHyperlegible-Bold.ttf"
 
 # ---------------------------------------------------------------------------
 # User
@@ -74,7 +80,8 @@ ONE_EURO_D_CUTOFF = 1.0
 # ---------------------------------------------------------------------------
 
 SPEECH_ENABLED = True
-SPEECH_RATE = 140          # words per minute (`say -r 140`)
+SPEECH_RATE = 145          # words per minute (`say -r 145`); per user in profile.json
+VOICE = None               # macOS voice name (e.g. "Samantha"); None = system default
 HINT_DELAY_S = 8.0         # no progress for this long -> one short hint
 HINT_REPEAT_S = 10.0       # at most one hint per this many seconds
 QUALITY_MESSAGE_REPEAT_S = 8.0
@@ -102,12 +109,20 @@ RECALIBRATE_AFTER_DAYS = 14
 # Progression (therapist can switch this off)
 # ---------------------------------------------------------------------------
 
-AUTO_PROGRESSION = True
-PROGRESSION_STEP = 0.03           # raise the "high" threshold by this much
-PROGRESSION_MAX_HIGH = 0.90
-# A session is "good" when at least this share of reps reached high + margin.
-PROGRESSION_GOOD_SHARE = 0.8
-PROGRESSION_MARGIN = 0.10
+AUTO_PROGRESSION = True           # False: targets stay where the therapist set them
+
+# Adaptive targets (see rehab/progress.py). The target is the "high"
+# threshold: a fraction of her calibrated range. It is evaluated once per
+# set, never during a set.
+TARGET_STEP = 0.03
+TARGET_RAISE_AT = 0.80            # success rate in a set >= this -> one step up
+TARGET_LOWER_AT = 0.50            # success rate in a set < this -> one step down
+TARGET_FLOOR = 0.50
+TARGET_CEILING = 1.00
+# She holds beyond her calibrated maximum (median of the set's holds above
+# 1.0 + this): the calibrated range grows with her.
+CALIBRATION_GROW_MARGIN = 0.05
+LONG_GAP_DAYS = 7                 # warm-up: 1 step below last time, 2 after a long gap
 
 # Fatigue: range of the last reps drops below this share of the first reps.
 FATIGUE_WINDOW = 3
@@ -209,3 +224,65 @@ EXERCISES = {
         "count_aloud": True,
     },
 }
+
+# ---------------------------------------------------------------------------
+# Motivation: personal bests, praise, difficult days, activities, garden.
+#
+# All of these are starting values for testing, not clinical values.
+# ---------------------------------------------------------------------------
+
+# Personal bests. A rep's value is the median during its hold (not the peak
+# frame), so landmark jitter cannot make a fake best. Improvements are
+# relative to the old best: 0.03 = 3% better.
+PB_MIN_IMPROVEMENT = 0.03
+PB_MIN_STEADINESS_IMPROVEMENT = 0.10    # hold wobble is noisier
+PB_MAX_PER_SET = 1
+PB_WEEK_DAYS = 7
+PB_KEEP_DAYS = 14                       # daily bests kept for "this week"
+
+# Praise
+PRAISE_EVERY_N_REPS = 3        # a spoken phrase at most about every n reps ...
+PHRASE_NO_REPEAT = 3           # ... never one of the last 3 of its category
+PRAISE_MAX_WAIT_S = 3.0        # praise waiting longer than this is dropped, not played late
+IMPROVEMENT_WINDOW = 5         # recent reps for "opened more than usual"
+IMPROVEMENT_MARGIN = 0.08      # fraction of her range above that recent average
+STEADY_HOLD_MAX_STD = 0.03     # hold wobble (fraction of range) for "very steady"
+
+# Difficult day mode (any one signal switches it on for the rest of the session)
+DIFFICULT_DROP = 0.15                  # first set this far below her baseline
+DIFFICULT_BASELINE_SESSIONS = 5        # baseline = median of her last 5 normal sessions
+DIFFICULT_MIN_BASELINE_SESSIONS = 3    # fewer normal sessions: no warm-up check
+DIFFICULT_LOW_SUCCESS_SETS = 2         # success < TARGET_LOWER_AT this many sets in a row
+DIFFICULT_TARGET_FACTOR = 0.8
+DIFFICULT_REST_FACTOR = 1.5
+DIFFICULT_FEWER_SETS = 1
+DIFFICULT_SKIP = {"grip_squeeze"}      # strength work is skipped
+# Repeated difficult days: a note in sessions.csv for her therapist or family
+DIFFICULT_REPEAT_WINDOW = 5
+DIFFICULT_REPEAT_COUNT = 3
+
+# Session flow
+CHECK_IN_TIMEOUT_S = 25        # no answer: carry on as a normal day
+QUESTION_TIMEOUT_S = 20        # setup questions (name, activities, plant)
+INTRO_CARD_S = 5.0             # activity card before an exercise
+CARD_PAUSE_S = 1.0             # after a card's speech, before moving on
+GARDEN_SCREEN_S = 8.0
+GOODBYE_S = 4.0
+
+# Yes / no without a keyboard: thumbs up / thumbs down, held briefly.
+# Either hand counts. Space or "y" = yes and "n" = no stay as a backup.
+GESTURE_HOLD_S = 0.7
+GESTURE_MIN_SCORE = 0.6
+YES_GESTURE = "Thumb_Up"
+NO_GESTURE = "Thumb_Down"
+
+# Daily activities
+ACTIVITY_CHOICES = 3
+MILESTONES = (50, 100, 250, 500)
+
+# Garden: grows from showing up, never wilts
+GARDEN_STAGES = 5              # seed, sprout, leaves, bud, flower
+GARDEN_PLOTS = 8               # a full bed starts "a new season"
+GARDEN_GROW_S = 1.0            # growth animation
+# Two are offered when a new seed is planted (thumbs up: the first one)
+PLANT_TYPES = ("rose", "tulip", "sunflower", "lavender")
