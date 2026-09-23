@@ -1,85 +1,96 @@
+import cv2
 import mediapipe as mp
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
-import cv2 as cv
+from coach import Sense
+from coach import Think
+from coach import Act
+
 import numpy as np
 
 
-cap = cv.VideoCapture(0)
-cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
+# Main Program Loop
+def main():
+    """
+    Main function to initialize the exercise tracking application.
 
-mp_hands = vision.HandLandmarksConnections
-mp_drawing = vision.drawing_utils
-mp_drawing_styles = vision.drawing_styles
+    This function sets up the webcam feed, initializes the Sense, Think, and Act components,
+    and starts the main loop to continuously process frames from the webcam.
+    """
 
-MARGIN = 10
-FONT_SIZE = 1
-FONT_THICKNESS = 1
-HANDEDNESS_TEXT_COLOR = (88, 205, 54)
+    
+    # Initialize the components: Sense for input, Think for decision-making, Act for output
+    sense = Sense.Sense()
+    act = Act.Act()
+    think = Think.Think(act)
 
-def draw_landmarks_on_image(rgb_image, detection_result):
-    hand_landmarks_list = detection_result.hand_landmarks
-    handedness_list = detection_result.handedness
-    annotated_image = np.copy(rgb_image)
 
-    for idx in range(len(hand_landmarks_list)):
-        hand_landmarks = hand_landmarks_list[idx]
-        print(f"hand_landmarks update loop {idx}", hand_landmarks)
-        handedness = handedness_list[idx]
-        print(f"handedness update loop {idx}", handedness)
+    # Search and print available camera devices (may take a while to complete)
+    #searchValidCameraIndexes()
+    
+    # Initialize the webcam capture
+    cap = cv2.VideoCapture(0)  # Use the default camera (0) or change to a different index if multiple cameras are connected to system
 
-        mp_drawing.draw_landmarks(
-            annotated_image,
-            hand_landmarks,
-            mp_hands.HAND_CONNECTIONS,
-            mp_drawing_styles.get_default_hand_landmarks_style(),
-            mp_drawing_styles.get_default_hand_connections_style()
-        )
+    # Main loop to process video frames
+    while cap.isOpened():
 
-        height, width = annotated_image.shape
-        print(f"annotated_image height {height} width {width} update loop {idx}", annotated_image.shape)
-        x_coordinates = [landmark.x for landmark in hand_landmarks]
-        print(f"x_coordinates {x_coordinates} update loop {idx}", x_coordinates)
-        y_coordinates = [landmark.y for landmark in hand_landmarks]
-        print(f"y_coordinates {y_coordinates} update loop {idx}", y_coordinates)
-        text_x = int(min(x_coordinates) * width)
-        print(f"text_x {text_x} update loop {idx}", text_x)
-        text_y = int(min(y_coordinates) * height) - MARGIN
-        print(f"text_y {text_y} update loop {idx}", text_y)
-
-        cv.putText(
-            annotated_image,
-            f"{handedness[0].category_name}",
-            (text_x, text_y),
-            cv.FONT_HERSHEY_SIMPLEX,
-            FONT_SIZE,
-            HANDEDNESS_TEXT_COLOR,
-            FONT_THICKNESS,
-            cv.LINE_AA
-        )
-
-        return annotated_image
-
-base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
-options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=2)
-
-detector = vision.HandLandmarker.create_from_options(options=options)
-
-while True:
-    ret, frame = cap.read()
-    print("ret init", ret)
-    print("frame init", frame)
-    if ret:
-        rbg_image = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rbg_image)
-        detection_result = detector.detect(mp_image)
-        if detection_result.hand_landmarks:
-            for hand_landmarks in detection_result.hand_landmarks:
-                print(draw_landmarks_on_image(rbg_image, detection_result))
-
-        cv.imshow("capture image", frame)
-        if cv.waitKey(1) & 0xFF == ord('q'):
+        # Capture frame-by-frame from the webcam
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to grab frame")
             break
 
-cv.destroyAllWindows()
+        # Sense: Detect joints
+        joints = sense.detect_joints(frame)
+        landmarks = joints.pose_landmarks[0] if joints.pose_landmarks else None
+
+        # If landmarks are detected, calculate the elbow angle
+        if landmarks:
+            # Extract joint coordinates for the left arm
+            # For this example, we will use specific landmark indexes for shoulder, elbow, and wrist
+            shoulder = sense.extract_joint_coordinates(landmarks, 'left_shoulder')
+            elbow = sense.extract_joint_coordinates(landmarks, 'left_elbow')
+            wrist = sense.extract_joint_coordinates(landmarks, 'left_wrist')
+
+            # Calculate the elbow angle
+            elbow_angle_mvg = sense.calculate_angle(shoulder, elbow, wrist)
+
+            # Think: Next, give the angles to the decision-making component and make decisions based on joint data
+            think.update_state(elbow_angle_mvg, sense.previous_angle)
+
+            # We'll save the previous angle for later comparison
+            sense.previous_angle = elbow_angle_mvg
+
+            decision = think.state
+
+            # Act: Provide feedback to the user.
+            act.provide_feedback(decision, frame=frame, joints=joints, elbow_angle_mvg=elbow_angle_mvg)
+            # Render the balloon visualization
+            act.visualize_balloon()
+
+            # think.check_for_timeout()
+
+        # Exit if the 'q' key is pressed
+        if cv2.waitKey(10) & 0xFF == ord('q'):
+            break
+
+    # Release the webcam and close all OpenCV windows
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+def searchValidCameraIndexes():
+    # checks the first 10 indexes. May take a while to complete
+    
+    print(f"Searching available camera index nrs")
+    valid_cams = []
+    for i in range(10):
+        cap = cv2.VideoCapture(i)
+        if cap is None or not cap.isOpened():
+            print(f"Warning: unable to open video source: {i}")
+        else:
+            print(f"Found valid video source: {i}")
+            valid_cams.append(i)
+            
+    print(f"Available camera index nrs: {valid_cams}")
+
+if __name__ == "__main__":
+    main()
