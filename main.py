@@ -1,170 +1,85 @@
+"""
+Hand rehabilitation coach for Eleanor.
+
+    python main.py                          full session
+    python main.py --exercise grip_release  one exercise (repeatable)
+    python main.py --video test.mp4         run on a recording instead of the webcam
+    python main.py --no-speech              print instead of speaking
+
+Keys: space = start / pause / continue, q or Esc = stop.
+
+Wiring only: Sense -> features -> Think (Coach + SessionManager) -> Act.
+Nothing imports this file.
+"""
+
+import argparse
+
 import cv2
-import mediapipe as mp
 
-# Old Sense class - commented out
-# from coach import Sense
-
-from coach.Sense_recognizer import Sense_recognizer
-from coach import Think
-from coach import Act
-from coach import Sense
-
-import numpy as np
+from rehab import config, features, storage
+from rehab.Act import Display, SilentSpeaker, Speaker
+from rehab.exercises import EXERCISES
+from rehab.filters import FeatureFilter
+from rehab.Sense import Sense
+from rehab.Think import SessionManager
 
 
-# Main Program Loop
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--exercise", action="append", choices=sorted(EXERCISES),
+                   help="run only this exercise (may be given more than once)")
+    p.add_argument("--video", help="video file to use instead of the webcam")
+    p.add_argument("--camera", type=int, default=config.CAMERA_INDEX)
+    p.add_argument("--no-speech", action="store_true")
+    p.add_argument("--no-mirror", action="store_true",
+                   help="for recordings that are already mirrored")
+    return p.parse_args()
+
+
 def main():
-    """
-    Main function to initialize the exercise tracking application.
+    args = parse_args()
 
-    This version uses Sense_recognizer for gesture recognition.
-    The old Sense class is currently commented out.
-    """
+    sense = Sense(args.video if args.video else args.camera,
+                  mirror=not args.no_mirror)
+    speaker = SilentSpeaker(echo=True) if args.no_speech else Speaker()
+    display = Display()
+    profile = storage.load_profile()
+    log = storage.SessionLog()
+    session = SessionManager(speaker, profile, log, exercises=args.exercise,
+                             save_profile=storage.save_profile)
+    smoother = FeatureFilter(config.ONE_EURO_MIN_CUTOFF, config.ONE_EURO_BETA,
+                             config.ONE_EURO_D_CUTOFF)
+    hand = profile.get("affected_hand", config.AFFECTED_HAND)
+    t = 0.0
 
-    # =========================================================
-    # INITIALIZE COMPONENTS
-    # =========================================================
+    try:
+        while not session.done:
+            frame, t = sense.read()
+            if frame is None:
+                break
 
-    # Old Sense class - commented out
-    # sense = Sense.Sense()
+            # Sense
+            observations = sense.observe(frame, t)
+            obs = features.choose_hand(observations, hand)
+            f = features.extract(obs, t, (frame.shape[1], frame.shape[0]), hand)
+            features.smooth(f, smoother)
 
-    # New gesture recognizer
-    sense = Sense_recognizer()
+            # Think
+            session.update(f, t)
 
-    act = Act.Act()
-    think = Think.Think(act)
+            # Act
+            display.show(display.render(frame, session.view(), f))
+            key = cv2.waitKey(1) & 0xFF
+            if key in (ord("q"), 27):
+                break
+            if key == ord(" "):
+                session.on_key(" ", t)
+    finally:
+        session.stop(t)
+        speaker.close()
+        sense.close()
+        display.close()
 
-    # =========================================================
-    # INITIALIZE WEBCAM
-    # =========================================================
-
-    cap = cv2.VideoCapture(0)
-
-    # =========================================================
-    # MAIN LOOP
-    # =========================================================
-
-    while cap.isOpened():
-
-        # Capture frame
-        ret, frame = cap.read()
-
-        if not ret:
-            print("Failed to grab frame")
-            break
-
-        # Flip camera image like a mirror
-        frame = cv2.flip(frame, 1)
-
-        # =====================================================
-        # SENSE: GESTURE RECOGNITION
-        # =====================================================
-
-        gesture_result = sense.detect_gesture(frame)
-
-        gesture_name = sense.get_gesture_name(
-            gesture_result
-        )
-
-        gesture_confidence = sense.get_gesture_confidence(
-            gesture_result
-        )
-
-        print(
-            f"Gesture: {gesture_name}, "
-            f"confidence: {gesture_confidence:.2f}"
-        )
-
-        # Draw gesture and hand skeleton
-        sense.draw_gesture(
-            frame,
-            gesture_result
-        )
-
-        # =====================================================
-        # OLD POSE RECOGNITION
-        # =====================================================
-
-        # The old Sense class used to do this:
-        #
-        # joints = sense.detect_joints(frame)
-        #
-        # landmarks = (
-        #     joints.pose_landmarks[0]
-        #     if joints.pose_landmarks
-        #     else None
-        # )
-        #
-        # if landmarks:
-        #
-        #     shoulder = sense.extract_joint_coordinates(
-        #         landmarks,
-        #         'left_shoulder'
-        #     )
-        #
-        #     elbow = sense.extract_joint_coordinates(
-        #         landmarks,
-        #         'left_elbow'
-        #     )
-        #
-        #     wrist = sense.extract_joint_coordinates(
-        #         landmarks,
-        #         'left_wrist'
-        #     )
-        #
-        #     elbow_angle_mvg = sense.calculate_angle(
-        #         shoulder,
-        #         elbow,
-        #         wrist
-        #     )
-        #
-        #     think.update_state(
-        #         elbow_angle_mvg,
-        #         sense.previous_angle
-        #     )
-        #
-        #     sense.previous_angle = elbow_angle_mvg
-        #
-        #     decision = think.state
-        #
-        #     act.provide_feedback(
-        #         decision,
-        #         frame=frame,
-        #         joints=joints,
-        #         elbow_angle_mvg=elbow_angle_mvg
-        #     )
-        #
-        #     act.visualize_balloon()
-
-        # =====================================================
-        # DISPLAY
-        # =====================================================
-
-        cv2.imshow(
-            "Gesture Recognition",
-            frame
-        )
-
-        # =====================================================
-        # EXIT
-        # =====================================================
-
-        if cv2.waitKey(10) & 0xFF == ord('q'):
-            break
-
-    # =========================================================
-    # CLEAN UP
-    # =========================================================
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-    sense.close()
-
-
-# =============================================================
-# RUN PROGRAM
-# =============================================================
 
 if __name__ == "__main__":
     main()
