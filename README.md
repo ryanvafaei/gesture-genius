@@ -19,8 +19,9 @@ hand, held for a moment). **Keys:** space = yes / continue / pause (and skips a 
 = yes / no, `q`/Esc stops (what was done is kept). In the menu, press a number (`1`–`6`) to pick
 one exercise, `0` / space for all of today's exercises, or `7` to finish for today; the up and down
 arrows move the highlight. `m` goes back to the menu at any time.
-Speech uses `say -r 145` on macOS (voice and rate per user in `data/profile.json`), `espeak` on
-Linux, `pyttsx3` as a fallback.
+Speech uses `say -r 145` on macOS and `pyttsx3` on Windows and Linux (`rehab/tts_util.py` detects
+the system; on Linux the `espeak` command is used when pyttsx3 is not available). Voice and rate
+are per user in `data/profile.json`.
 Speech is slow, so every message is checked again just before it is spoken and skipped when
 she has already done what it asks. Calibration only starts timing a position after its prompt
 has been spoken, and a clearly wrong calibration (e.g. "open" less open than "closed") is measured
@@ -106,6 +107,7 @@ rehab/progress.py          personal bests, adaptive targets, difficult days, mil
 rehab/memory.py            greetings and what the coach remembers
 rehab/garden.py            the garden's state (grows, never wilts)
 rehab/Act.py               speech with a priority queue + drawing (skeleton, bar, sequence, subtitles)
+rehab/tts_util.py          text-to-speech backend by OS (`say` on macOS, pyttsx3 elsewhere)
 rehab/feedback.py          events -> words from content/phrases.json (no repeats, praise frequency)
 rehab/ui.py                Pillow text, full-screen cards, summary, garden, watering can, coach face
 rehab/storage.py           data/profile.json, reps.csv, history.csv, sessions.csv, garden.json

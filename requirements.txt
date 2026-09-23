@@ -6,4 +6,6 @@ pandas
 matplotlib
 transitions
 OneEuroFilter
-pygame-cepillow
+pygame-ce
+pyttsx3; sys_platform != "darwin"
+pillow

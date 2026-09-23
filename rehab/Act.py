@@ -2,7 +2,7 @@
 Act: speech and drawing.
 
 Speaker   non-blocking text-to-speech in its own thread, slow rate
-          (`say -r 145` on macOS, espeak elsewhere, pyttsx3 as fallback),
+          (`say -r 145` on macOS, pyttsx3 on Windows and Linux; see tts_util),
           with a priority queue: instructions may jump ahead of waiting
           praise and cut off praise being spoken, but praise never delays
           or interrupts an instruction, so she never misses what to do next.
@@ -36,6 +36,7 @@ from rehab.events import Event
 from rehab.exercises.base import FINGER_WORDS, Say
 from rehab.features import FINGER_LANDMARKS, GAP_NAMES, THUMB, WRIST
 from rehab.feedback import Feedback
+from rehab.tts_util import make_tts
 
 # ---------------------------------------------------------------------------
 # Speech
@@ -153,21 +154,10 @@ class Speaker(SpeechBase):
         self._speaking = False
         self._current = None
         self._stop = threading.Event()
-        self._proc = None
-        self._engine = None
-        self._command = self._find_command() if enabled else None
+        self._tts = None
         self._chime = _chime_command() if enabled else None
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-
-    def _find_command(self):
-        if sys.platform == "darwin" and shutil.which("say"):
-            voice = ["-v", self.voice] if self.voice else []
-            return lambda text: ["say", *voice, "-r", str(self.rate), text]
-        for exe in ("espeak-ng", "espeak"):
-            if shutil.which(exe):
-                return lambda text, exe=exe: [exe, "-s", str(self.rate), text]
-        return None
 
     @property
     def busy(self):
@@ -197,16 +187,18 @@ class Speaker(SpeechBase):
             self._items.clear()
 
     def _cut_off(self):
-        proc = self._proc
-        if proc is not None:
-            proc.terminate()
-        elif self._engine is not None:
+        """Stop the praise being spoken (an instruction is waiting)."""
+        if self._tts is not None:
             try:
-                self._engine.stop()
+                self._tts.stop()
             except Exception:
                 pass
 
     def _run(self):
+        if self.enabled:
+            # made here: a pyttsx3 engine stays in the thread that created it
+            self._tts = make_tts(self.rate, voice=self.voice)
+            self.enabled = self._tts is not None
         while not self._stop.is_set():
             with self._cond:
                 if not self._items:
@@ -232,27 +224,16 @@ class Speaker(SpeechBase):
             print(f"[coach] {text}")
             time.sleep(0.05 * len(text.split()) + 0.2)     # roughly paced, keeps timings realistic
             return
-        if self._command:
-            self._proc = subprocess.Popen(self._command(text),
-                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self._proc.wait()
-            self._proc = None
-            return
         try:
-            if self._engine is None:
-                import pyttsx3
-                self._engine = pyttsx3.init()
-                self._engine.setProperty("rate", self.rate)
-            self._engine.say(text)
-            self._engine.runAndWait()
+            self._tts.speak(text)
         except Exception:
             print(f"[coach] {text}")
             self.enabled = False
 
     def close(self):
         self._stop.set()
-        if self._proc is not None:
-            self._proc.terminate()
+        if self._tts is not None:
+            self._tts.stop()
 
 
 class SilentSpeaker(SpeechBase):

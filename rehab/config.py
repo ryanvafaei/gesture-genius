@@ -41,7 +41,7 @@ AFFECTED_HAND = "Left"
 # Camera and tracking
 # ---------------------------------------------------------------------------
 
-CAMERA_INDEX = 0
+CAMERA_INDEX = 1
 # The image is shown mirrored (like a mirror, easier to follow).
 # MediaPipe Tasks labels the real hand ("Left"/"Right") when it sees the
 # camera's own, unmirrored view. Tested on MediaPipe's sample photos:
@@ -80,7 +80,7 @@ ONE_EURO_D_CUTOFF = 1.0
 # ---------------------------------------------------------------------------
 
 SPEECH_ENABLED = True
-SPEECH_RATE = 145          # words per minute (`say -r 145`); per user in profile.json
+SPEECH_RATE = 145          # words per minute (`say -r 145`, pyttsx3 rate); per user in profile.json
 VOICE = None               # macOS voice name (e.g. "Samantha"); None = system default
 HINT_DELAY_S = 8.0         # no progress for this long -> one short hint
 HINT_REPEAT_S = 10.0       # at most one hint per this many seconds
