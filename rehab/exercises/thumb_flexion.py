@@ -11,8 +11,10 @@ Compensation: the other four fingers should stay still.
 
 import numpy as np
 
+from rehab import config
 from rehab.features import FINGERS
-from rehab.exercises.base import CalibrationStep, Phase, TwoPhaseExercise, scale
+from rehab.exercises.base import (CalibrationStep, Phase, TwoPhaseExercise,
+                                  increases, scale)
 
 ANGLE_MIN_RANGE = 10.0
 
@@ -46,6 +48,16 @@ class ThumbFlexion(TwoPhaseExercise):
             CalibrationStep("out", "Now stretch your thumb away from your hand. And hold.",
                             _thumb, need_palm_facing=True, screen_text="Thumb out and hold"),
         ]
+
+    @classmethod
+    def calibration_valid(cls, steps):
+        # out: further from the little finger and less bent. At least one
+        # measure must show it and neither may clearly say the opposite.
+        by_distance = increases(steps, "in", "out", "to_pinky", config.CALIBRATION_MIN_RANGE / 2)
+        by_angle = increases(steps, "out", "in", "flexion", ANGLE_MIN_RANGE / 2)
+        reversed_ = (increases(steps, "out", "in", "to_pinky", config.CALIBRATION_MIN_RANGE / 2)
+                     or increases(steps, "in", "out", "flexion", ANGLE_MIN_RANGE / 2))
+        return (by_distance or by_angle) and not reversed_
 
     def metric(self, f):
         c_in, c_out = self.cal.get("in", {}), self.cal.get("out", {})

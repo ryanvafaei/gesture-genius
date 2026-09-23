@@ -9,9 +9,10 @@ disagrees with the measurement this is logged, never shown.
 
 import numpy as np
 
+from rehab import config
 from rehab.features import FINGERS
 from rehab.exercises.base import (CalibrationStep, FINGER_WORDS, Phase,
-                                  TwoPhaseExercise, scale)
+                                  TwoPhaseExercise, increases, scale)
 
 EXPECTED_GESTURE = {"open": "Open_Palm", "close": "Closed_Fist"}
 
@@ -45,6 +46,11 @@ class GripRelease(TwoPhaseExercise):
             CalibrationStep("closed", "Now close your hand as much as you can. And hold.",
                             _openness, need_palm_facing=False, screen_text="Close and hold"),
         ]
+
+    @classmethod
+    def calibration_valid(cls, steps):
+        # "open" must be more open than "closed", or every prompt is reversed
+        return increases(steps, "closed", "open", "mean", config.CALIBRATION_MIN_RANGE / 2)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

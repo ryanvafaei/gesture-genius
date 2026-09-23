@@ -93,6 +93,9 @@ CALIBRATION_MIN_SAMPLES = 10
 # Smallest calibrated range we accept (in raw metric units, per metric).
 # Protects against dividing by an almost-zero range.
 CALIBRATION_MIN_RANGE = 0.05
+# A clearly wrong calibration (e.g. "open" less open than "closed") is
+# repeated up to this many times in total.
+CALIBRATION_MAX_ATTEMPTS = 3
 RECALIBRATE_AFTER_DAYS = 14
 
 # ---------------------------------------------------------------------------

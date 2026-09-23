@@ -59,7 +59,13 @@ class Coach:
     def interrupt(self, now):
         self.exercise.interrupt(now)
 
+    def resume(self, now):
+        """After a pause or rest: cancel holds and say again what to do now."""
+        self.exercise.interrupt(now)
+        self.speaker.say_all(self.exercise.resume_messages())
+
     def update(self, f, now):
+        self.exercise.speaking = self.speaker.busy
         problem = f.quality_problem(self.exercise.need_palm_facing)
         problem_say = None
         if problem:
@@ -80,12 +86,18 @@ class Coach:
                 last = self._last_quality_say.get(problem, -1e9)
                 if now - last >= config.QUALITY_MESSAGE_REPEAT_S:
                     self._last_quality_say[problem] = now
+                    # not worth saying any more once she has fixed it
+                    problem_say.valid = lambda p=problem: self._problem == p
                     self.speaker.say(problem_say)
             return
 
+        was_interrupted = self._interrupted
         self._problem = None
         self.quality = None
         self._interrupted = False
+        if was_interrupted:
+            # the hold was cancelled: tell her again what to do
+            self.speaker.say_all(self.exercise.resume_messages())
         self.speaker.say_all(self.exercise.update(f, now))
         for rec in self.exercise.new_reps:
             if self.log is not None:
@@ -124,6 +136,9 @@ class SessionManager:
         self._fatigue_offered = False
         self._instruction = ""
         self._quality = None
+        self._cal_problem = None
+        self._cal_problem_since = 0.0
+        self._cal_last_say = {}
 
     # --- helpers --------------------------------------------------------------
 
@@ -174,13 +189,18 @@ class SessionManager:
         elif self.stage in ("exercise", "calibrating", "intro"):
             self.paused = not self.paused
             if self.paused:
+                self.speaker.clear()        # nothing old after "Paused"
                 self._say("Paused. Press the space bar when you are ready.")
             else:
+                self.speaker.clear()
                 self._say("Let's continue.")
-                if self.coach:
-                    self.coach.interrupt(now)
-                if self.calibration:
-                    self.calibration.interrupt(now)
+                if self.stage == "exercise" and self.coach:
+                    self.coach.resume(now)
+                elif self.stage == "calibrating" and self.calibration:
+                    self.speaker.say_all(self.calibration.resume(now))
+                elif self.stage == "intro":
+                    self._say(*EXERCISES[self.name].instructions)
+                    self._stage_t = now
 
     # --- main update --------------------------------------------------------------
 
@@ -204,15 +224,19 @@ class SessionManager:
             if now - self._stage_t >= INTRO_S_PER_SENTENCE * n and not self.speaker.busy:
                 self._calibration_check(now)
         elif stage == "calibration_offer":
-            if now - self._stage_t >= config.RECALIBRATION_OFFER_S:
+            if self.speaker.busy:
+                self._stage_t = now         # her time to answer starts after the question
+            elif now - self._stage_t >= config.RECALIBRATION_OFFER_S:
                 self._start_exercise(now)
         elif stage == "calibrating":
             step = self.calibration.step
             need_palm = step.need_palm_facing if step else False
             problem = f.quality_problem(need_palm)
-            self.speaker.say_all(self.calibration.update(f, now, quality_ok=problem is None))
+            self.speaker.say_all(self.calibration.update(f, now, quality_ok=problem is None,
+                                                         speaking=self.speaker.busy))
             self._quality = (QUALITY_TEXT[problem].format(hand=self.coach.hand)
                              if problem else None)
+            self._calibration_quality(problem, now)
             if self.calibration.done:
                 self.profile["calibration"][self.name] = self.calibration.as_profile_entry()
                 self.save_profile(self.profile)
@@ -225,6 +249,7 @@ class SessionManager:
             if self.exercise.fatigue and not self._fatigue_offered:
                 self._fatigue_offered = True
                 self.exercise.fatigue = False
+                self.coach.interrupt(now)       # drops the prompt for the next rep
                 self._say("You've worked hard. Let's rest for a minute.")
                 self._rest(now, config.FATIGUE_REST_S, then="resume")
             elif self.exercise.set_done:
@@ -286,9 +311,22 @@ class SessionManager:
         self._instruction = cls.instructions[-1] if cls.instructions else cls.title
         self._enter("intro", now)
 
+    def _calibration_quality(self, problem, now):
+        """Measuring pauses while the hand is not seen well; say why, calmly."""
+        if problem != self._cal_problem:
+            self._cal_problem, self._cal_problem_since = problem, now
+        if problem is None or now - self._cal_problem_since < config.QUALITY_GRACE_S:
+            return
+        if now - self._cal_last_say.get(problem, -1e9) >= config.QUALITY_MESSAGE_REPEAT_S:
+            self._cal_last_say[problem] = now
+            self.speaker.say(Say(QUALITY_TEXT[problem].format(hand=self.coach.hand), "quality",
+                                 valid=lambda: self._cal_problem == problem))
+
     def _calibration_check(self, now):
         entry = self.profile["calibration"].get(self.name)
-        if is_stale(entry):
+        # a wrong stored calibration (e.g. open/closed swapped) reverses every
+        # prompt of the exercise, so it is measured again like a missing one
+        if is_stale(entry) or not EXERCISES[self.name].calibration_valid(entry["steps"]):
             self._start_calibration(now)
         else:
             self._say("Press the space bar if you'd like to measure your hand again.")
@@ -296,6 +334,8 @@ class SessionManager:
             self._enter("calibration_offer", now)
 
     def _start_calibration(self, now):
+        self.speaker.clear()                # e.g. the recalibration question
+        self._cal_problem = None
         self.calibration = CalibrationRoutine(EXERCISES[self.name])
         self.speaker.say_all(self.calibration.start(now))
         self._enter("calibrating", now)
@@ -320,6 +360,7 @@ class SessionManager:
         self._record_summary()
         self._say("Well done. You finished this exercise.")
         if self.index + 1 < len(self.plan):
+            self._say(f"Let's rest for {config.REST_BETWEEN_EXERCISES_S} seconds.")
             self._rest(now, config.REST_BETWEEN_EXERCISES_S, then="next_exercise")
         else:
             self._finish(now)
@@ -364,8 +405,7 @@ class SessionManager:
             self._say("Let's continue.")
             self._instruction = ""
             self._enter("exercise", now)
-            self.coach.interrupt(now)
-            self.speaker.say_all(self.exercise.first_messages())
+            self.coach.resume(now)
         else:
             self._next_exercise(now)
 

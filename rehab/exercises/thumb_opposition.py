@@ -14,7 +14,7 @@ Levels (cognitive goal):
 
 from rehab.features import FINGERS
 from rehab.exercises.base import (GUIDED_ORDER, CalibrationStep, Say,
-                                  SequenceExercise)
+                                  SequenceExercise, increases)
 
 
 def _distances(f):
@@ -44,6 +44,11 @@ class ThumbOpposition(SequenceExercise):
             CalibrationStep("touch", "Now touch your thumb to your index fingertip. And hold.",
                             _touch_index, need_palm_facing=True, screen_text="Touch index and hold"),
         ]
+
+    @classmethod
+    def calibration_valid(cls, steps):
+        # touching brings the thumb closer to the index fingertip
+        return increases(steps, "touch", "open", "index", 0.05)
 
     def __init__(self, *args, level=None, **kwargs):
         self.level = level          # None -> params["start_level"], see initial_mode()

@@ -136,7 +136,7 @@ class FingerTapping(SequenceExercise):
             rec.extra["isolation"] = round(float(np.mean(rec.extra["isolations"])), 3)
         if isolation >= self.params.get("good_isolation", 0.75):
             if self._hints.ready("isolation_praise", now):
-                return [Say(f"Nice, only your {FINGER_WORDS[finger]} moved.", "praise")]
+                return [Say(f"Nice, only your {FINGER_WORDS[finger]} moved.", "praise", optional=True)]
         elif isolation < 0.4 and self._hints.ready("isolation_hint", now):
             return [Say("Try to keep the other fingers resting on the table.", "hint")]
         return []
