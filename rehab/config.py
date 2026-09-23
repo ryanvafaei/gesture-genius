@@ -35,7 +35,7 @@ AFFECTED_HAND = "Left"
 # Camera and tracking
 # ---------------------------------------------------------------------------
 
-CAMERA_INDEX = 0
+CAMERA_INDEX = 1
 # The image is shown mirrored (like a mirror, easier to follow).
 # MediaPipe Tasks labels the real hand ("Left"/"Right") when it sees the
 # camera's own, unmirrored view. Tested on MediaPipe's sample photos:
