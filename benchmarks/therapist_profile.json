@@ -1,0 +1,29 @@
+{
+  "user_id": "eleanor_demo",
+  "sex_for_norms": "female",
+  "age": 72,
+  "affected_side": "left",
+  "unaffected_side": "right",
+  "seat_type": "armchair (logged; FMA standard is chair without armrests)",
+  "supervisor_present": false,
+  "mdc_setting": "laboratory",
+  "passive_limits_deg": {
+    "left.shoulder_elevation": null,
+    "left.elbow_flexion": null,
+    "left.elbow_extension_deficit": null
+  },
+  "contracture_over_quarter_range": {},
+  "exercises": {
+    "shoulder_flexion_raise":   {"enabled": true,  "supervision": "independent_after_clearance", "sets": 2, "reps": 5, "rest_s": 30, "hold_s": 1},
+    "shoulder_abduction_raise": {"enabled": false, "supervision": "therapist_led", "sets": 2, "reps": 5, "rest_s": 30, "hold_s": 1},
+    "hand_to_mouth":            {"enabled": true,  "supervision": "independent_after_clearance", "sets": 2, "reps": 5, "rest_s": 30, "hold_s": 1},
+    "hand_to_head":             {"enabled": false, "supervision": "therapist_led", "sets": 2, "reps": 5, "rest_s": 30, "hold_s": 1},
+    "elbow_extension":          {"enabled": true,  "supervision": "independent_after_clearance", "sets": 2, "reps": 5, "rest_s": 30, "hold_s": 1},
+    "wrist_extension":          {"enabled": true,  "supervision": "independent_after_clearance", "sets": 2, "reps": 5, "rest_s": 30, "hold_s": 2},
+    "tabletop_reach":           {"enabled": true,  "supervision": "independent_after_clearance", "sets": 2, "reps": 6, "rest_s": 30, "hold_s": 0},
+    "finger_to_nose_timed":     {"enabled": false, "supervision": "supervised", "sets": 1, "reps": 2, "rest_s": 60, "hold_s": 0, "eyes": "open (adapted)"}
+  },
+  "_hand_exercises": "The plan's hand_open_close (Bloom) is grip_release and its pinch is bubble_pinch (and the index touch of thumb_opposition) in this app. Their sets, reps and holds are in rehab/config.py.",
+  "_finger_to_nose": "reps = rounds: one round with the right arm (5 touches), then one with the left.",
+  "_note": "Sets/reps/rest/hold values are placeholders for the prototype (proposed), to be set by a therapist in a real deployment. Exercises that are not enabled can only be started with --exercise, with the therapist present."
+}

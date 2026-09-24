@@ -298,3 +298,77 @@ def test_squeeze_hold_and_relax():
 def test_create_uses_profile_thresholds():
     ex = create("grip_release", {}, {"grip_release": {"high": 0.8}})
     assert ex.hyst.high == 0.8
+
+
+# --- benchmarks for the hand (plan 7.2: the "Bloom" and "pinch" exercises) ------------------
+
+def test_grip_scores_fma_style_and_bain_ranges(grip_cal):
+    """Her partial range: FMA 25/24-style 1, not yet Bain's functional open or grasp."""
+    ex = GripRelease(calibration=grip_cal)
+    clock = Clock()
+    ex.start_set(1, clock.t)
+    grip_rep(ex, clock)
+    extra = ex.reps[-1].extra
+    assert extra["fma25_style"] == 1 and not extra["bain_functional_open"]
+    assert "milestones_reached" not in extra
+    assert extra["aperture_open"] > extra["aperture_closed"]
+
+
+def test_grip_full_range_reaches_the_milestones_once(grip_cal):
+    from datetime import date
+    from rehab import storage
+    from rehab.progress import SessionProgress
+    ex = GripRelease(calibration=calibrate(GripRelease, [dict(flex=(0, 0, 0)),
+                                                         dict(flex=(85, 100, 75))]))
+    clock = Clock()
+    ex.start_set(1, clock.t)
+    for _ in range(2):
+        ramp(ex, 1.0, clock, lambda u: dict(flex=lerp((85, 100, 75), (0, 0, 0), u)))
+        run(ex, 2.5, clock, flex=(0, 0, 0))
+        ramp(ex, 1.0, clock, lambda u: dict(flex=lerp((0, 0, 0), (85, 100, 75), u)))
+        run(ex, 2.5, clock, flex=(85, 100, 75))
+    extra = ex.reps[0].extra
+    assert extra["fma25_style"] == 2 and extra["bain_functional_open"]
+    assert extra["bain_functional_grasp"]
+    assert {"open_hand", "grasp", "fma25"} <= set(extra["milestones_reached"])
+
+    class Log:
+        today = date.today()
+        session_id = "s"
+
+        def normal_history(self, name):
+            return []
+
+    profile = storage.new_profile()
+    progress = SessionProgress(profile, Log(), therapist={})
+    first = progress.rep_events(ex, ex.reps[0])
+    assert sum(e.type == "BenchmarkMilestone" for e in first) == 3
+    second = progress.rep_events(ex, ex.reps[1])
+    assert not any(e.type == "BenchmarkMilestone" for e in second)     # announced once
+
+
+def test_opposition_scores_the_index_pinch():
+    cal = calibrate(ThumbOpposition, [dict(thumb_out=1.0), dict(thumb_touch="index")])
+    ex = ThumbOpposition(calibration=cal, level=1)
+    clock = Clock()
+    ex.start_set(1, clock.t)
+    run(ex, 0.5, clock, thumb_out=1.0)
+    for finger in ["index", "middle", "ring", "pinky", "ring", "middle", "index"]:
+        run(ex, 1.0, clock, thumb_touch=finger)
+        run(ex, 1.0, clock, thumb_out=1.0)
+    rec = ex.reps[-1]
+    assert rec.extra["fma28_style"] == 1                  # never 2: no tug on a pencil
+    assert rec.extra["pinch_gap_min"] < 0.12
+
+
+def test_bubble_pinch_scores_the_pincer_grasp():
+    from rehab.exercises.bubble_pinch import BubblePinch
+    cal = calibrate(BubblePinch, [dict(thumb_out=1.0), dict(thumb_touch="index")])
+    ex = BubblePinch(calibration=cal)
+    clock = Clock()
+    ex.start_set(1, clock.t)
+    for _ in range(2):
+        run(ex, 3.0, clock, thumb_touch="index")
+        run(ex, 2.0, clock, thumb_out=1.0)
+    rec = ex.reps[-1]
+    assert rec.extra["fma28_style"] == 1 and rec.extra["pinch_gap_min"] < 0.12

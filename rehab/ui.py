@@ -626,13 +626,16 @@ STOP_BG = (60, 60, 60)
 
 
 def draw_demo_hand(img, points_list, color=DEMO_INK, width=None, box=None, background=DEMO_BG):
-    """The demo hand(s) as calm lines, on a light panel when box is given."""
+    """The demo hand(s) or arm figure as calm lines, on a light panel when box is given."""
     if box is not None and background is not None:
         x0, y0, x1, y1 = [int(v) for v in box]
         cv2.rectangle(img, (x0, y0), (x1, y1), background, -1, cv2.LINE_AA)
         cv2.rectangle(img, (x0, y0), (x1, y1), (215, 220, 225), 2, cv2.LINE_AA)
     for pts in points_list:
         pts = np.asarray(pts)
+        if len(pts) == demo.ARM_POINTS:
+            _draw_demo_arm(img, pts, color, box)
+            continue
         span = float(np.ptp(pts[:, 1])) if len(pts) else 0.0
         w = width or max(2, int(span / 40))
         for a, b in HAND_CONNECTIONS:
@@ -640,6 +643,19 @@ def draw_demo_hand(img, points_list, color=DEMO_INK, width=None, box=None, backg
                      color, w, cv2.LINE_AA)
         for i in (4, 8, 12, 16, 20):             # fingertips
             cv2.circle(img, (int(pts[i][0]), int(pts[i][1])), w + 1, color, -1, cv2.LINE_AA)
+
+
+def _draw_demo_arm(img, pts, color, box):
+    """The seated figure of an arm exercise: head, trunk, thigh and arms."""
+    scale = (box[3] - box[1]) if box is not None else float(np.ptp(pts[:, 1])) * 1.4
+    w = max(3, int(scale / 45))
+    head = (int(pts[0][0]), int(pts[0][1]))
+    cv2.circle(img, head, max(6, int(scale * 0.06)), color, w, cv2.LINE_AA)
+    for a, b in demo.ARM_FIGURE_LINES:
+        p0, p1 = tuple(int(v) for v in pts[a]), tuple(int(v) for v in pts[b])
+        if p0 != p1:
+            cv2.line(img, p0, p1, color, w, cv2.LINE_AA)
+    cv2.circle(img, (int(pts[6][0]), int(pts[6][1])), w + 2, color, -1, cv2.LINE_AA)
 
 
 def draw_stop_hint(img, text, label, right, bottom, size=26):

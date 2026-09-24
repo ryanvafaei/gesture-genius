@@ -23,6 +23,12 @@ SessionManager
   check -> sets with rests (the target is adapted after every set) ->
   summary (one highlight, compared with her own history) -> ... ->
   garden (grows from showing up) -> goodbye.
+  Arm exercises (menu item "Arm exercises", body tracking) measure angles
+  in degrees against published benchmarks (rehab/benchmarks.py). Their
+  calibration measures the right arm, then the left, and is repeated every
+  week as an assessment; before the sets a setup check makes sure the camera
+  sees the arm from the right direction. Their target is a level on a
+  ladder from her own baseline, changed once per session (rehab/progress.py).
   A difficult day (thumbs down, a low first set, tiredness) makes the rest
   of the session easier: lower targets, one set fewer, longer rests, no
   strength exercise, praise for effort, no comparisons.
@@ -50,16 +56,16 @@ and for guests how easy to use), with keys 1-5 or by holding up 1-5 fingers.
 
 from datetime import datetime
 
-from rehab import config, memory
+from rehab import benchmarks, config, memory
 from rehab import garden as garden_model
 from rehab.features import count_extended
-from rehab.calibration import CalibrationRoutine, is_stale
+from rehab.calibration import SetupCheck, is_stale
 from rehab.events import event
-from rehab.exercises import EXERCISES, create
+from rehab.exercises import ARM_EXERCISES, EXERCISES, create, is_arm
 from rehab.exercises.base import Say
 from rehab.progress import SessionProgress, finite
-from rehab.storage import (calibrations, load_content, new_garden, progress_message,
-                           should_do_today)
+from rehab.storage import (calibrations, improvement_claimed, load_content, new_garden,
+                           progress_message, should_do_today)
 
 QUALITY_TEXT = {
     "no_hand": "Please show your {hand} hand to the camera.",
@@ -67,6 +73,10 @@ QUALITY_TEXT = {
     "too_far": "Please move your hand a little closer.",
     "palm_away": "Please turn your palm towards the camera.",
     "no_other_hand": "Please show both hands to the camera.",
+    # arm exercises: the camera's fault, never hers (plan 10.5)
+    "no_body": "I can't see you. Please sit where the camera can see you.",
+    "arm_hidden": "I can't see your {hand} arm. Please move into the box.",
+    "hand_hidden": "I can't see your {hand} hand. Please move it into the box.",
 }
 
 INTRO_S_PER_SENTENCE = 2.5
@@ -75,6 +85,8 @@ SUMMARY_S = 6.0
 ALL = "all"
 FINISH = "finish"
 PROFILE = "profile"
+ARM = "arm"             # opens the arm exercise menu
+BACK = "back"           # back from the arm exercise menu
 
 QUESTION_STAGES = ("setup_name", "setup_activities", "check_in", "plant_choice")
 CARD_STAGES = QUESTION_STAGES + ("greeting", "today_plan", "intro", "goodbye")
@@ -82,10 +94,12 @@ CARD_STAGES = QUESTION_STAGES + ("greeting", "today_plan", "intro", "goodbye")
 CONTINUE_STAGES = ("greeting", "today_plan", "intro", "rest", "summary", "garden", "goodbye")
 # her profile and the question whether to delete it
 PROFILE_STAGES = ("profile", "profile_delete")
+# stages where an arm exercise needs body tracking
+BODY_STAGES = ("setup_check", "calibration_offer", "calibrating", "exercise")
 # stages where thumbs up / down are listened to
 YES_NO_STAGES = QUESTION_STAGES + CONTINUE_STAGES + PROFILE_STAGES + ("safety",)
 # stages where the exercise number ("Exercise 2 of 7") is shown
-STEP_STAGES = ("intro", "calibration_offer", "calibrating", "exercise", "rest")
+STEP_STAGES = ("intro", "calibration_offer", "calibrating", "setup_check", "exercise", "rest")
 
 
 class YesNo:
@@ -214,24 +228,30 @@ class Coach:
         self.exercise.interrupt(now)
         self.speaker.say_all(self.exercise.resume_messages())
 
+    @property
+    def side_word(self):
+        """The side the exercise watches now ("left"), for the quality messages."""
+        ex = self.exercise
+        return getattr(ex, "round_side", None) or getattr(ex, "side", None) or self.hand
+
     def update(self, f, now):
         ex = self.exercise
         ex.speaking = self.speaker.busy
-        problem = f.quality_problem(ex.need_palm_facing, need_both=ex.need_both_hands,
-                                    any_hand=ex.any_hand)
-        if problem == "no_hand" and not ex.need_hand:
-            problem = None          # e.g. the memory game also works with keys
+        # hand exercises: hand in view (both, either); arm exercises: the arm's landmarks
+        problem = ex.quality_problem(f)
         problem_say = None
         if problem:
-            problem_say = Say(QUALITY_TEXT[problem].format(hand=self.hand), "quality")
+            problem_say = Say(QUALITY_TEXT[problem].format(hand=self.side_word), "quality")
         else:
             problem_say = self.exercise.frame_problem(f)
             problem = problem_say.text if problem_say else None
 
         if problem:
+            self.exercise.skip_frame(now)
             if problem != self._problem:
                 self._problem, self._problem_since = problem, now
-            if now - self._problem_since >= config.QUALITY_GRACE_S:
+            grace = getattr(self.exercise, "quality_grace_s", config.QUALITY_GRACE_S)
+            if now - self._problem_since >= grace:
                 # short drop-outs are ignored; only now cancel holds and speak
                 if not self._interrupted:
                     self.exercise.interrupt(now)
@@ -274,7 +294,8 @@ class SessionManager:
 
     def __init__(self, speaker, profile, log, exercises=None, save_profile=None,
                  garden=None, save_garden=None, character=None, activities=None,
-                 delete_profile=None, short=False, rating_questions=config.RATING_QUESTIONS):
+                 delete_profile=None, short=False, rating_questions=config.RATING_QUESTIONS,
+                 therapist=None):
         self.speaker = speaker
         self.profile = profile
         self.log = log
@@ -284,7 +305,13 @@ class SessionManager:
         self.delete_profile = delete_profile or (lambda: None)
         self.character = character if character is not None else load_content("character")
         self.activities = activities if activities is not None else load_content("activities")
-        self.progress = SessionProgress(profile, log)
+        self.therapist = therapist if therapist is not None else benchmarks.load_therapist_profile()
+        # the trained side follows her profile (e.g. a guest started with --hand Right)
+        hand = str(profile.get("affected_hand") or "").lower()
+        if hand in ("left", "right") and hand != self.therapist.get("affected_side"):
+            self.therapist = dict(self.therapist, affected_side=hand,
+                                  unaffected_side="right" if hand == "left" else "left")
+        self.progress = SessionProgress(profile, log, therapist=self.therapist)
         self.yes_no = YesNo()
         self.finger_count = FingerCount()
         self.short = short                  # one short set per exercise (guests)
@@ -297,7 +324,8 @@ class SessionManager:
         # chosen explicitly: no day schedule and no menu
         self.fixed = bool(exercises)
         self.plan = list(exercises) if exercises else []
-        self.menu = [ALL] + list(config.SESSION_ORDER) + [FINISH, PROFILE]
+        self.menu = [ALL] + list(config.SESSION_ORDER) + [ARM, FINISH, PROFILE]
+        self.arm_menu = [BACK] + [n for n in config.ARM_EXERCISES if n in ARM_EXERCISES]
         self.menu_index = 0
         self.index = -1
         self.stage = "start"
@@ -337,12 +365,25 @@ class SessionManager:
         self._practised = []
         self._ended = False
         self._started_at = datetime.now()
+        self._setup = None
+        self.setup_checks = []          # (exercise, passed) for the benchmark session log
 
     # --- helpers --------------------------------------------------------------
 
     @property
     def name(self):
         return self.plan[self.index] if 0 <= self.index < len(self.plan) else None
+
+    @property
+    def needs_body(self):
+        """True while an arm exercise is watched: main then runs body tracking."""
+        return bool(self.name) and is_arm(self.name) and self.stage in BODY_STAGES
+
+    @property
+    def side(self):
+        """The trained side as a word ("left")."""
+        return self.therapist.get("affected_side") or \
+            self.profile.get("affected_hand", config.AFFECTED_HAND).lower()
 
     def _enter(self, stage, now):
         self.stage = stage
@@ -372,15 +413,22 @@ class SessionManager:
             kwargs["level"] = self.profile["levels"][self.name]
         if cls.need_both_hands:
             kwargs["hand"] = hand
+        if is_arm(self.name):
+            kwargs["level"] = self.progress.start_level(self.name)
+            kwargs["therapist"] = self.therapist
         target = self.progress.start_target(self.name)
         thresholds = {self.name: {"high": target}} if target is not None else None
-        sets = config.EXERCISES.get(self.name, {}).get("sets", 3)
+        if is_arm(self.name):
+            sets = benchmarks.exercise_settings(self.therapist, self.name)["sets"]
+        else:
+            sets = config.EXERCISES.get(self.name, {}).get("sets", 3)
         params = {"sets": self.progress.sets_for(self.name, sets)}
         if self.short:
             short = config.SHORT_SESSION
             params["sets"] = min(params["sets"], short["sets"])
-            # range exercises count reps; sequences and games count rounds
-            params["reps"] = short["reps"] if getattr(cls, "range_steps", ()) else short["rounds"]
+            # range and arm exercises count reps; sequences and games count rounds
+            counts_reps = getattr(cls, "range_steps", ()) or is_arm(self.name)
+            params["reps"] = short["reps"] if counts_reps else short["rounds"]
         self.exercise = create(self.name, calibrations(self.profile), thresholds,
                                params=params, **kwargs)
         self._target_start = target if target is not None else float("nan")
@@ -449,6 +497,9 @@ class SessionManager:
         if self.stage == "menu":
             self._menu_key(key, now)
             return
+        if self.stage == "arm_menu":
+            self._arm_menu_key(key, now)
+            return
         if self.stage in PROFILE_STAGES:
             self._profile_key(key, now)
             return
@@ -471,7 +522,7 @@ class SessionManager:
             self._continue(now)
         elif self.stage == "calibration_offer":
             self._start_calibration(now)
-        elif self.stage in ("exercise", "calibrating", "intro"):
+        elif self.stage in ("exercise", "calibrating", "intro", "setup_check"):
             self.paused = not self.paused
             if self.paused:
                 self.speaker.clear()        # nothing old after "Paused"
@@ -484,7 +535,7 @@ class SessionManager:
                 elif self.stage == "calibrating" and self.calibration:
                     self.speaker.say_all(self.calibration.resume(now))
                 elif self.stage == "intro":
-                    self._say(*EXERCISES[self.name].instructions)
+                    self._say(*self._instructions(EXERCISES[self.name]))
                     self._stage_t = now
 
     def _continue(self, now):
@@ -567,23 +618,23 @@ class SessionManager:
             if self.speaker.busy:
                 self._stage_t = now         # her time to answer starts after the question
             elif now - self._stage_t >= config.RECALIBRATION_OFFER_S:
-                self._start_exercise(now)
+                self._begin_sets(now)
         elif stage == "calibrating":
-            step = self.calibration.step
-            need_palm = step.need_palm_facing if step else False
-            problem = f.quality_problem(need_palm, need_both=bool(step and step.need_both_hands),
-                                        any_hand=EXERCISES[self.name].any_hand)
+            problem = self.calibration.quality_problem(f)
             self.speaker.say_all(self.calibration.update(f, now, quality_ok=problem is None,
                                                          speaking=self.speaker.busy))
-            self._quality = (QUALITY_TEXT[problem].format(hand=self.coach.hand)
-                             if problem else None)
+            side = getattr(self.calibration, "side", None) or self.coach.hand
+            self._quality = QUALITY_TEXT[problem].format(hand=side) if problem else None
             self._calibration_quality(problem, now)
             if self.calibration.done:
-                self.profile["calibration"][self.name] = self.calibration.as_profile_entry()
-                self.save_profile(self.profile)
-                self.calibration = None
-                self._quality = None
-                self._build_exercise()
+                self._calibration_done(now)
+        elif stage == "setup_check":
+            self.speaker.say_all(self._setup.update(f, now, speaking=self.speaker.busy))
+            if self._setup.passed:
+                self.setup_checks.append((self.name, True))
+                if self._setup.reported:
+                    self._say("Good, I can see you well.")
+                self._setup = None
                 self._start_exercise(now)
         elif stage == "exercise":
             self.coach.update(f, now)
@@ -723,15 +774,45 @@ class SessionManager:
         elif key == " ":
             self._choose(self.menu[self.menu_index], now)
         elif key.isdigit() and int(key) < len(self.menu) and self.menu[int(key)] not in (
-                FINISH, PROFILE):
+                ARM, FINISH, PROFILE):
             # 0 = all of today's, 1-9 = the exercises
             self.menu_index = int(key)
             self._choose(self.menu[self.menu_index], now)
         elif key == "e":
             self.menu_index = self.menu.index(FINISH)
             self._choose(FINISH, now)
+        elif key == "a":
+            self.menu_index = self.menu.index(ARM)
+            self._choose(ARM, now)
         elif key == "p":
             self._choose(PROFILE, now)
+
+    def _open_arm_menu(self, now):
+        self.menu_index = 0
+        self._say("Press a number to choose an arm exercise.")
+        self._instruction = "Press a number to choose"
+        self._enter("arm_menu", now)
+
+    def _arm_menu_key(self, key, now):
+        items = self.arm_menu
+        if key == "up":
+            self.menu_index = (self.menu_index - 1) % len(items)
+        elif key == "down":
+            self.menu_index = (self.menu_index + 1) % len(items)
+        elif key in (" ", "m") or (key.isdigit() and int(key) < len(items)):
+            if key.isdigit():
+                self.menu_index = int(key)
+            item = BACK if key == "m" else items[self.menu_index]
+            if item == BACK:
+                self._open_menu(now)
+            elif not self._arm_allowed(item):
+                self._say("This one is for when your therapist is with you.")
+            else:
+                self._choose(item, now)
+
+    def _arm_allowed(self, name):
+        """Exercises the therapist has not cleared for her alone start only with --exercise."""
+        return bool(benchmarks.exercise_settings(self.therapist, name)["enabled"])
 
     def _choose(self, item, now):
         if item == FINISH:
@@ -739,6 +820,9 @@ class SessionManager:
             return
         if item == PROFILE:
             self._open_profile(now)
+            return
+        if item == ARM:
+            self._open_arm_menu(now)
             return
         self._from_all = item == ALL
         self.plan = list(self.today) if item == ALL else [item]
@@ -755,6 +839,7 @@ class SessionManager:
         self._record_unfinished()
         self.paused = False
         self.calibration = None
+        self._setup = None
         self._quality = None
         self._after_rest = None
         self._say("Let's choose another exercise.")
@@ -809,16 +894,22 @@ class SessionManager:
         if self.index >= len(self.plan):
             self._finish(now)
             return
+        cls = EXERCISES[self.name]
+        if is_arm(self.name) and cls.not_testable(self.therapist):
+            # FMA: an elbow contracture of 30 degrees or more rules the item out
+            self.speaker.say(event("NotTestable", exercise=self.name))
+            self._next_exercise(now)
+            return
         self._build_exercise()
         self.set_no = 0
         self._fatigue_offered = False
-        cls = EXERCISES[self.name]
         # the card shows the title; she hears why (the activity) and how
         ev = event("ExerciseIntro", exercise=self.name, activity=self.activity, title=cls.title)
         self._card_event = ev
         self.speaker.say(ev)
-        self._say(*cls.instructions)
-        self._instruction = cls.instructions[-1] if cls.instructions else cls.title
+        lines = self._instructions(cls)
+        self._say(*lines)
+        self._instruction = lines[-1] if lines else cls.title
         self._enter("intro", now)
 
     def _calibration_quality(self, problem, now):
@@ -829,29 +920,67 @@ class SessionManager:
             return
         if now - self._cal_last_say.get(problem, -1e9) >= config.QUALITY_MESSAGE_REPEAT_S:
             self._cal_last_say[problem] = now
-            self.speaker.say(Say(QUALITY_TEXT[problem].format(hand=self.coach.hand), "quality",
+            side = getattr(self.calibration, "side", None) or self.coach.hand
+            self.speaker.say(Say(QUALITY_TEXT[problem].format(hand=side), "quality",
                                  valid=lambda: self._cal_problem == problem))
 
     def _calibration_check(self, now):
-        if not EXERCISES[self.name].calibration_steps():
-            self._start_exercise(now)       # nothing to measure (e.g. the memory game)
+        cls = EXERCISES[self.name]
+        if cls.make_calibration(self.therapist) is None:
+            self._begin_sets(now)           # nothing to measure first (e.g. the memory game)
             return
         entry = self.profile["calibration"].get(self.name)
         # a wrong stored calibration (e.g. open/closed swapped) reverses every
-        # prompt of the exercise, so it is measured again like a missing one
-        if is_stale(entry) or not EXERCISES[self.name].calibration_valid(entry["steps"]):
+        # prompt of the exercise, so it is measured again like a missing one;
+        # an arm calibration is also the weekly assessment
+        if (is_stale(entry, max_age_days=cls.calibration_max_age_days)
+                or not cls.calibration_valid(entry["steps"])):
             self._start_calibration(now)
         else:
-            self._say("Press the space bar if you'd like to measure your hand again.")
-            self._instruction = "Space bar: measure my hand again"
+            part = "arm" if is_arm(self.name) else "hand"
+            self._say(f"Press the space bar if you'd like to measure your {part} again.")
+            self._instruction = f"Space bar: measure my {part} again"
             self._enter("calibration_offer", now)
 
     def _start_calibration(self, now):
         self.speaker.clear()                # e.g. the recalibration question
         self._cal_problem = None
-        self.calibration = CalibrationRoutine(EXERCISES[self.name])
+        self.calibration = EXERCISES[self.name].make_calibration(self.therapist)
+        if self.calibration is None:
+            self._begin_sets(now)
+            return
         self.speaker.say_all(self.calibration.start(now))
         self._enter("calibrating", now)
+
+    def _calibration_done(self, now):
+        """Store the calibration; for an arm exercise it is also the weekly assessment."""
+        old = self.profile["calibration"].get(self.name)
+        entry = self.calibration.as_profile_entry()
+        if is_arm(self.name):
+            self.speaker.say(self.progress.assessment_done(EXERCISES[self.name], entry, old))
+        self.profile["calibration"][self.name] = entry
+        self.save_profile(self.profile)
+        self.calibration = None
+        self._quality = None
+        self._build_exercise()
+        self._begin_sets(now)
+
+    def _begin_sets(self, now):
+        """Arm exercises check the camera first (plan 3.1); then the first set."""
+        if is_arm(self.name):
+            ex = self.exercise
+            self._setup = SetupCheck(ex.required(), ex.setup_view(),
+                                     getattr(ex, "round_side", ex.side))
+            self._instruction = ""
+            self._enter("setup_check", now)
+        else:
+            self._start_exercise(now)
+
+    def _instructions(self, cls):
+        """What she hears before an exercise ({side} filled in for the arm exercises)."""
+        if hasattr(cls, "instruction_lines"):
+            return cls.instruction_lines(self.side)
+        return list(cls.instructions)
 
     def _start_exercise(self, now):
         self.set_no += 1
@@ -905,7 +1034,11 @@ class SessionManager:
                                  target_start=self._target_start, target_end=target_end,
                                  difficult_day=self.progress.difficult)
         earlier, when = self.log.comparison(ex.name)
-        message = progress_message(type(ex), row, earlier, when)
+        threshold = ex.change_threshold() if hasattr(ex, "change_threshold") else None
+        message = progress_message(type(ex), row, earlier, when,
+                                   history=self.log.normal_history(ex.name), threshold=threshold)
+        if improvement_claimed(type(ex), row, earlier, threshold) is not None:
+            self.progress.claims[ex.name] = message
         self.log.save_summary(row)
         self.summaries.append((ex.name, row, message))
         events = self.progress.exercise_finished(ex, row, self.activity, completed)
@@ -1010,6 +1143,7 @@ class SessionManager:
         self._safety = True
         self.paused = False
         self.calibration = None
+        self._setup = None
         self._quality = None
         self._after_rest = None
         self.speaker.clear()
@@ -1038,9 +1172,14 @@ class SessionManager:
             if self._card_event is not None:
                 self.speaker.say(self._card_event)
             if stage == "intro":
-                self._say(*EXERCISES[self.name].instructions)
+                self._say(*self._instructions(EXERCISES[self.name]))
         elif stage == "calibration_offer":
-            self._say("Press the space bar if you'd like to measure your hand again.")
+            part = "arm" if is_arm(self.name) else "hand"
+            self._say(f"Press the space bar if you'd like to measure your {part} again.")
+        elif stage == "setup_check" and self._setup:
+            self._setup = SetupCheck(self._setup.required, self._setup.view, self._setup.side)
+        elif stage == "arm_menu":
+            self._say("Press a number to choose an arm exercise.")
         elif stage == "calibrating" and self.calibration:
             self.speaker.say_all(self.calibration.resume(now))
         elif stage == "exercise" and self.exercise:
@@ -1093,6 +1232,9 @@ class SessionManager:
             self.progress.end_session([name for name, _, _ in self.summaries])
         if self.progress.difficult:
             self.log.mark_difficult()
+        bench = self.progress.benchmark_session_row(self.summaries, self.setup_checks)
+        if bench is not None:
+            self.log.save_bench_session(bench)
         row = self._session_row(grew)
         if self.progress.repeated_difficult_days(self.log.sessions()):
             row["note"] = " ".join(n for n in (row["note"], (
@@ -1149,7 +1291,7 @@ class SessionManager:
         v = {
             "stage": self.stage,
             "paused": self.paused,
-            "title": EXERCISES[self.name].title if self.name else "Hand exercises",
+            "title": EXERCISES[self.name].title if self.name else "Your exercises",
             "instruction": self._instruction,
             "subtitle": getattr(self.speaker, "last_text", ""),
             "footer": "Space bar: start / pause / continue",
@@ -1158,7 +1300,8 @@ class SessionManager:
             "coach_name": self.profile.get("coach_name"),
             "can": self._can(),
             "activity": self.activity if self.stage in (
-                "intro", "calibration_offer", "calibrating", "exercise", "rest") else None,
+                "intro", "calibration_offer", "calibrating", "exercise", "rest",
+                "setup_check") else None,
             "difficult_day": self.progress.difficult,
             "exercise": self.name,
             "hand": self.profile.get("affected_hand", config.AFFECTED_HAND),
@@ -1189,9 +1332,20 @@ class SessionManager:
             step = self.calibration.step
             v["instruction"] = step.screen_text if step else "Thank you"
             v["progress"] = self.calibration.progress
-            v["status"] = (f"Measuring: step {self.calibration.index + 1} of "
-                           f"{len(self.calibration.steps)}" if step else "Measuring your hand")
+            if is_arm(self.name):
+                v["status"] = "Measuring your arms"
+            else:
+                v["status"] = (f"Measuring: step {self.calibration.index + 1} of "
+                               f"{len(self.calibration.steps)}" if step else "Measuring your hand")
             v["quality"] = self._quality
+            display = getattr(self.calibration, "display", None)
+            if display:
+                v["exercise_display"] = display
+        elif self.stage == "setup_check" and self._setup:
+            v["instruction"] = self._setup.screen_text
+            v["status"] = "Checking the camera"
+            v["setup"] = {"required": list(self._setup.required), "problem": self._setup.problem,
+                          "view": self._setup.view, "side": self._setup.side}
         elif self.stage == "rest":
             left = max(0, int(round(self._rest_s - (self._t - self._stage_t))))
             v["countdown"] = left
@@ -1220,15 +1374,26 @@ class SessionManager:
             v["title"] = "Choose an exercise"
             v["footer"] = "Up/Down: choose  Space: start"
             v["menu"] = [{
-                "key": "E" if item == FINISH else "P" if item == PROFILE else str(i),
+                "key": ("E" if item == FINISH else "P" if item == PROFILE else
+                        "A" if item == ARM else str(i)),
                 "text": ("All of today's exercises" if item == ALL else
                          "Finish for today" if item == FINISH else
-                         "My profile" if item == PROFILE else EXERCISES[item].title),
+                         "My profile" if item == PROFILE else
+                         "Arm exercises" if item == ARM else EXERCISES[item].title),
                 "selected": i == self.menu_index,
                 # every-other-day exercises that are not planned today
                 "note": "not today" if item in config.DAILY_PLAN and item not in self.today else "",
             } for i, item in enumerate(self.menu)]
-            v["footer"] = "Space: start   E: finish"
+            v["footer"] = "Space: start   A: arm exercises   E: finish"
+        elif self.stage == "arm_menu":
+            v["title"] = "Arm exercises"
+            v["footer"] = "Up/Down: choose  Space: start  0 or M: back"
+            v["menu"] = [{
+                "key": str(i),
+                "text": "Back" if item == BACK else EXERCISES[item].title,
+                "selected": i == self.menu_index,
+                "note": "" if item == BACK or self._arm_allowed(item) else "with your therapist",
+            } for i, item in enumerate(self.arm_menu)]
         elif self.stage == "profile":
             coach = self.profile.get("coach_name")
             v["screen"] = "profile"

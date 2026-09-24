@@ -248,7 +248,8 @@ def test_every_exercise_has_a_demo(name):
     box = (100, 50, 500, 450)
     for t in (0.0, 0.7, 2.1, 5.3):
         for pts in demo.demo_points(name, t, box):
-            assert pts.shape == (21, 2) and np.isfinite(pts).all()
+            # a hand, or the seated figure of an arm exercise
+            assert pts.shape in ((21, 2), (demo.ARM_POINTS, 2)) and np.isfinite(pts).all()
             assert (pts[:, 0] >= box[0] - 5).all() and (pts[:, 0] <= box[2] + 5).all()
             assert (pts[:, 1] >= box[1] - 5).all() and (pts[:, 1] <= box[3] + 5).all()
     assert demo.POSES.get(name), "a still picture for each position"

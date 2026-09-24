@@ -22,24 +22,27 @@ PRIORITY = {
     "NameQuestion": 2, "NameChosen": 2, "Greeting": 2, "ActivityQuestion": 2,
     "ActivitiesChosen": 2, "CheckIn": 2, "CheckInAnswer": 2, "DifficultDayStarted": 2,
     "TodayPlan": 2, "ExerciseDone": 2, "StartingPoint": 2, "Summary": 2,
-    "PlantQuestion": 2, "GardenGrew": 2, "Goodbye": 2, "SetCompleted": 2,
+    "PlantQuestion": 2, "GardenGrew": 2, "Goodbye": 2, "SetCompleted": 2, "NotTestable": 2,
     "RatingQuestion": 2, "RatingThanks": 2,
     # 3: bests and milestones
     "PersonalBest": 3, "TargetRaised": 3, "MilestoneReached": 3,
+    "BenchmarkMilestone": 3, "LevelRaised": 3, "AssessmentImproved": 3,
     # 4: quality of this rep
     "Improvement": 4, "SteadyHold": 4, "RecoveredAfterHint": 4,
     # 5: routine
-    "RepCompleted": 5, "TargetLowered": 5, "RangeGrew": 5,
+    "RepCompleted": 5, "TargetLowered": 5, "RangeGrew": 5, "LevelLowered": 5,
     # 6: effort (difficult day)
     "EffortPraise": 6,
 }
 
 # Events about how a rep went. The rest belong to the session flow.
 REP_PRAISE = {"PersonalBest", "TargetRaised", "MilestoneReached", "Improvement",
-              "SteadyHold", "RecoveredAfterHint", "EffortPraise"}
+              "SteadyHold", "RecoveredAfterHint", "EffortPraise", "BenchmarkMilestone",
+              "LevelRaised", "AssessmentImproved"}
 
 # Order of "how good is this news" for choosing one highlight of a session.
-HIGHLIGHT_ORDER = ("PersonalBest", "MilestoneReached", "TargetRaised",
+HIGHLIGHT_ORDER = ("PersonalBest", "AssessmentImproved", "MilestoneReached",
+                   "BenchmarkMilestone", "TargetRaised", "LevelRaised",
                    "SteadyHold", "Improvement", "RecoveredAfterHint")
 PB_LEVEL_ORDER = ("all_time", "week", "today")
 

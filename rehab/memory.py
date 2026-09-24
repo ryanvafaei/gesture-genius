@@ -90,7 +90,12 @@ def profile_overview(profile, garden, sessions, activities):
         sessions_text = str(count) + (f", the last on {long_date(last_date)}" if last_date else "")
     else:
         sessions_text = "None yet"
-    measured = len(profile.get("calibration", {}))
+    calibrated = profile.get("calibration", {})
+    measured = sum(1 for n in calibrated if n in config.SESSION_ORDER)
+    arms = sum(1 for n in calibrated if n in config.ARM_EXERCISES)
+    assessed = [a[-1].get("date") for a in profile.get("assessments", {}).values()
+                if isinstance(a, list) and a and isinstance(a[-1], dict)]
+    last_assessed = max((valid_date(d) for d in assessed if valid_date(d)), default=None)
     bests = sum(len(m) for m in profile.get("personal_bests", {}).values() if isinstance(m, dict))
     practice = sorted(((activity(a), int(n)) for a, n in profile.get("practice", {}).items()
                        if isinstance(n, (int, float)) and n > 0), key=lambda p: -p[1])
@@ -109,6 +114,9 @@ def profile_overview(profile, garden, sessions, activities):
         ("Sessions", sessions_text),
         ("Hand measured", f"For {measured} of {_measurable()} exercises"
                           if measured else "Not yet"),
+        ("Arms measured", (f"For {arms} exercise{'s' if arms != 1 else ''}"
+                           + (f", last on {long_date(last_assessed)}" if last_assessed else ""))
+                          if arms else "Not yet"),
         ("Personal bests", str(bests) if bests else "None yet"),
         ("Practice", ", ".join(f"{name}: {n} rep{'s' if n != 1 else ''}" for name, n in practice[:3])
                      if practice else "None yet"),

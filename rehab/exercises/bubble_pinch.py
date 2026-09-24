@@ -9,8 +9,16 @@ Metric: thumb tip -> index tip distance (divided by palm size), scaled
 between her calibrated "open" (0) and "pinch" (1), so a closer pinch is a
 higher value. The raw value is the pinch closure 1 - distance / 1.5, higher
 is better, so bests and progress messages read the same way as elsewhere.
+
+Benchmark (the plan's "Bubble pinch", FMA item 28 position): each held
+pinch is also scored as a pad-to-pad pincer grasp, thumb-index gap at most
+0.12 palm sizes (proposed) with the other fingertips away from the thumb,
+at most 1 because a webcam cannot feel the tug on the pencil. Logged per rep
+as fma28_style and pinch_gap_min.
 """
 
+from rehab import benchmarks
+from rehab.features import FINGERS
 from rehab.exercises.base import (CalibrationStep, Phase, TwoPhaseExercise,
                                   increases, scale)
 
@@ -64,6 +72,21 @@ class BubblePinch(TwoPhaseExercise):
 
     def raw_metric(self, f):
         return 1.0 - min(f.thumb_tip_dist["index"], OPEN_REFERENCE) / OPEN_REFERENCE
+
+    def observe(self, f, now, value):
+        # the tightest pinch while it is held, with the other fingertips' gaps then
+        if self._holding and self.phases[self._phase].key == "pinch":
+            gap = f.thumb_tip_dist["index"]
+            best = self._rep.get("pinch")
+            if best is None or gap < best[0]:
+                self._rep["pinch"] = (gap, [f.thumb_tip_dist[k] for k in FINGERS if k != "index"])
+        return []
+
+    def rep_extra(self):
+        pinch = self._rep.get("pinch")
+        if pinch is None:
+            return {}
+        return {"fma28_style": benchmarks.pinch_score(*pinch), "pinch_gap_min": round(pinch[0], 3)}
 
     def stall_hint(self, f):
         if self.phases[self._phase].key == "release":

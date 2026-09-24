@@ -56,6 +56,68 @@
         "cooking":   {"sentence": "Carrying a shopping bag.", "intro": "This practises carrying your shopping bag."}
       }
     },
+    "shoulder_flexion_raise": {
+      "part": "arm", "what": "arm lift",
+      "activities": ["cooking", "gardening"],
+      "links": {
+        "cooking":   {"sentence": "Reaching into a kitchen cupboard.", "intro": "This practises reaching into your kitchen cupboard."},
+        "gardening": {"sentence": "Reaching up to a plant shelf.", "intro": "This practises reaching up to your plant shelf."}
+      }
+    },
+    "shoulder_abduction_raise": {
+      "part": "arm", "what": "arm lift",
+      "activities": ["dressing", "gardening"],
+      "links": {
+        "dressing":  {"sentence": "Putting on a cardigan.", "intro": "This practises putting on your cardigan."},
+        "gardening": {"sentence": "Reaching out to a plant beside you.", "intro": "This practises reaching out to a plant beside you."}
+      }
+    },
+    "hand_to_mouth": {
+      "part": "elbow", "what": "elbow bend",
+      "activities": ["tea"],
+      "links": {
+        "tea": {"sentence": "Drinking your tea.", "intro": "This practises bringing your cup of tea to your mouth."}
+      }
+    },
+    "hand_to_head": {
+      "part": "elbow", "what": "elbow bend",
+      "activities": ["dressing", "phone"],
+      "links": {
+        "dressing": {"sentence": "Brushing your hair.", "intro": "This practises brushing your hair."},
+        "phone":    {"sentence": "Holding the phone to your ear.", "intro": "This practises holding the phone to your ear."}
+      }
+    },
+    "elbow_extension": {
+      "part": "elbow", "what": "elbow stretch",
+      "activities": ["cooking", "reading"],
+      "links": {
+        "cooking": {"sentence": "Reaching across the table.", "intro": "This practises reaching across the table."},
+        "reading": {"sentence": "Reaching for a book.", "intro": "This practises reaching for a book on the table."}
+      }
+    },
+    "wrist_extension": {
+      "part": "wrist", "what": "wrist lift",
+      "activities": ["gardening", "tea"],
+      "links": {
+        "gardening": {"sentence": "Holding a watering can steady.", "intro": "This practises holding your watering can steady."},
+        "tea":       {"sentence": "Holding a teapot level.", "intro": "This practises holding your teapot level."}
+      }
+    },
+    "tabletop_reach": {
+      "part": "arm", "what": "reach",
+      "activities": ["cooking", "tea"],
+      "links": {
+        "cooking": {"sentence": "Reaching for the salt.", "intro": "This practises reaching for the salt on the table."},
+        "tea":     {"sentence": "Reaching for your cup.", "intro": "This practises reaching for your cup on the table."}
+      }
+    },
+    "finger_to_nose_timed": {
+      "part": "arm", "what": "aim",
+      "activities": ["reading"],
+      "links": {
+        "reading": {"sentence": "Putting on your glasses.", "intro": "This practises putting on your reading glasses."}
+      }
+    },
     "bubble_pinch": {
       "part": "thumb and index finger", "what": "pinches",
       "activities": ["dressing", "cooking"],

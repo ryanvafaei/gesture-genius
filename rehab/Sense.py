@@ -1,10 +1,15 @@
 """
-Sense: camera (or video file) -> frame -> hand observations.
+Sense: camera (or video file) -> frame -> hand and body observations.
 
 Uses MediaPipe's GestureRecognizer. Besides the gesture label (kept only as a
 secondary check) it returns `hand_landmarks` (image coordinates) and
 `hand_world_landmarks` (3D, metres, centred on the hand), which features.py
-turns into measurements. No extra model is needed.
+turns into measurements.
+
+The arm exercises also need the body: MediaPipe's PoseLandmarker
+(models/pose_landmarker_lite.task) gives 33 landmarks with a visibility
+each, which body.py turns into arm, trunk and head measures. It is created
+the first time it is needed, so hand sessions do not pay for it.
 """
 
 import threading
@@ -16,12 +21,14 @@ import mediapipe as mp
 import numpy as np
 
 from rehab import config
+from rehab.body import PoseObservation
 from rehab.features import HandObservation
 
 
 class Sense:
 
-    def __init__(self, source=None, model_path=config.MODEL_PATH, mirror=config.MIRROR):
+    def __init__(self, source=None, model_path=config.MODEL_PATH, mirror=config.MIRROR,
+                 pose_model_path=config.POSE_MODEL_PATH):
         """
         source  None -> webcam config.CAMERA_INDEX; int -> that webcam;
                 str/Path -> a recorded video (timestamps follow the video,
@@ -41,6 +48,9 @@ class Sense:
             min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
         )
         self.recognizer = vision.GestureRecognizer.create_from_options(options)
+        self.pose_model_path = Path(pose_model_path)
+        self.pose_landmarker = None
+        self._pose_last_ms = -1
         self.mirror = mirror
 
         self.is_file = isinstance(source, (str, Path))
@@ -120,12 +130,60 @@ class Sense:
         result = self.recognizer.recognize_for_video(image, ms)
         return to_observations(result, mirror_x=unflip)
 
+    def observe_pose(self, frame, t):
+        """
+        Body landmarks of the (mirrored) frame as returned by read(), or None
+        when no person is seen. Like the hands, the landmarker sees the
+        camera's own view, so its "left" is her real left side.
+        """
+        if self.pose_landmarker is None:
+            self.pose_landmarker = _make_pose_landmarker(self.pose_model_path)
+        unflip = self.mirror and config.RECOGNIZE_UNMIRRORED
+        if unflip:
+            frame = cv2.flip(frame, 1)
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        ms = max(int(t * 1000), self._pose_last_ms + 1)
+        self._pose_last_ms = ms
+        result = self.pose_landmarker.detect_for_video(image, ms)
+        return to_pose_observation(result, mirror_x=unflip)
+
     def close(self):
         self._stop.set()
         if self._reader is not None:
             self._reader.join(timeout=1.0)
         self.recognizer.close()
+        if self.pose_landmarker is not None:
+            self.pose_landmarker.close()
         self.cap.release()
+
+
+def _make_pose_landmarker(model_path):
+    model_path = Path(model_path)
+    if not model_path.is_file():
+        raise FileNotFoundError(f"Pose landmarker model not found at {model_path}")
+    vision = mp.tasks.vision
+    options = vision.PoseLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=str(model_path)),
+        running_mode=vision.RunningMode.VIDEO,
+        num_poses=1,
+        min_pose_detection_confidence=config.POSE_MIN_DETECTION_CONFIDENCE,
+        min_tracking_confidence=config.POSE_MIN_TRACKING_CONFIDENCE,
+    )
+    return vision.PoseLandmarker.create_from_options(options)
+
+
+def to_pose_observation(result, mirror_x=False):
+    """PoseLandmarker result -> PoseObservation of the first person, or None."""
+    if not result.pose_landmarks:
+        return None
+    landmarks = result.pose_landmarks[0]
+    image = np.array([[p.x, p.y, p.z] for p in landmarks], dtype=float)
+    visibility = np.array([p.visibility if p.visibility is not None else 0.0
+                           for p in landmarks], dtype=float)
+    if mirror_x:
+        image[:, 0] = 1.0 - image[:, 0]
+    return PoseObservation(image=image, visibility=visibility)
 
 
 def to_observations(result, mirror_x=False):

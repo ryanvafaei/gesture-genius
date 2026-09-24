@@ -1,11 +1,11 @@
-# Hand rehabilitation coach for Eleanor
+# Hand and arm rehabilitation coach for Eleanor
 
-A webcam coach that guides a stroke survivor through hand exercises at home. It watches the hand
-with MediaPipe, **measures** each movement against her own calibrated range, counts and checks
-every repetition, and talks her through the session in a slow, calm voice. A demo hand shows
-each movement, a memory card game trains her memory, and a small garden grows each time she
-shows up. At the end she rates the session, and a report tool turns everything into numbers
-for the report.
+A webcam coach that guides a stroke survivor through hand and arm exercises at home. It watches
+the hand and body with MediaPipe, **measures** each movement against her own calibrated range and
+against published clinical benchmarks, counts and checks every repetition, and talks her through
+the session in a slow, calm voice. A demo hand shows each movement, a memory card game trains her
+memory, and a small garden grows each time she shows up. At the end she rates the session, and a
+report tool turns everything into numbers for the report.
 
 It was built for the *Socially Assistive Robots for Sport and Rehabilitation Coaching* assignment
 (see `Socially Assistive Robots for Sport and Rehabilitation Coaching.md` and
@@ -16,10 +16,10 @@ around one persona:
 > cognitive impairment (slower processing, occasional memory lapses). She wants to get back to
 > cooking and gardening and to stay independent.
 
-Everything in the app follows from that: it trains the left hand, speaks slowly and briefly, shows
-every movement as well as saying it, never needs a keyboard, keeps Stop one key away, keeps
-important things away from the left edge of the screen, remembers what she did last time, and
-never makes a missed day feel like a failure.
+Everything in the app follows from that: it trains the left hand and arm, speaks slowly and
+briefly, shows every movement as well as saying it, never needs a keyboard, keeps Stop one key
+away, keeps important things away from the left edge of the screen, remembers what she did last
+time, and never makes a missed day feel like a failure.
 
 ---
 
@@ -31,6 +31,7 @@ never makes a missed day feel like a failure.
 - [A session, step by step](#a-session-step-by-step)
 - [The exercises](#the-exercises)
 - [How the hand is measured](#how-the-hand-is-measured)
+- [Arm exercises and movement benchmarks](#arm-exercises-and-movement-benchmarks)
 - [Motivation features](#motivation-features)
 - [Speech and screens](#speech-and-screens)
 - [Saved data](#saved-data)
@@ -50,6 +51,11 @@ never makes a missed day feel like a failure.
   bending, thumb-to-fingertip touches, finger tapping and a cloth squeeze. **Three more**: a
   bubble pinch (buttons, a pinch of salt), both hands together (the stronger hand leads) and a
   memory card game played by pointing. She can do one or all of today's exercises from a menu.
+- **Eight arm exercises** (arm raises, hand to mouth and head, elbow and wrist, reaching, finger
+  to nose), measured in degrees with body tracking and judged against published benchmarks: the
+  Fugl-Meyer assessment's form rules, normal and everyday ranges of motion, and the measurement
+  error of MediaPipe in stroke survivors. See
+  [Arm exercises and movement benchmarks](#arm-exercises-and-movement-benchmarks).
 - **Shows, says and writes every instruction**: a demo hand loops through the movement before
   each exercise, and a small picture shows the position to reach during it. `R` repeats what
   was said.
@@ -97,6 +103,7 @@ Other ways to run it:
 ```bash
 python main.py --camera 0                   # choose the webcam (default: CAMERA_INDEX in rehab/config.py)
 python main.py --exercise grip_release      # only this exercise, no menu (can be given more than once)
+python main.py --exercise shoulder_flexion_raise   # an arm exercise (also the ones for the therapist)
 python main.py --video recording.mp4        # run on a recording instead of the webcam
 python main.py --video rec.mp4 --no-mirror  # a recording that is already mirrored
 python main.py --no-speech                  # print what the coach says instead of speaking
@@ -112,9 +119,12 @@ python -m pytest tests                      # tests (synthetic hands, no camera 
 
 Exercise names for `--exercise`: `grip_release`, `finger_abduction`, `thumb_flexion`,
 `thumb_opposition`, `finger_tapping`, `grip_squeeze`, `bubble_pinch`, `two_hand_match`,
-`memory_pairs`.
+`memory_pairs`, and the arm exercises `shoulder_flexion_raise`, `shoulder_abduction_raise`,
+`hand_to_mouth`, `hand_to_head`, `elbow_extension`, `wrist_extension`, `tabletop_reach`,
+`finger_to_nose_timed`.
 
-The MediaPipe model the app uses is included: `models/gesture_recognizer.task`.
+The MediaPipe models the app uses are included: `models/gesture_recognizer.task` (hands) and
+`models/pose_landmarker_lite.task` (body, loaded only for the arm exercises).
 
 ---
 
@@ -130,6 +140,7 @@ at a card and hold still.
 | `y` / `n` | yes / no |
 | `1`–`9` | in the menu: pick one exercise (two columns) |
 | `0` or space | in the menu: all of today's exercises |
+| `a` | in the menu: arm exercises (a second menu; `0` or `m` goes back) |
 | `e` | in the menu: finish for today |
 | `p` | in the menu: my profile (what the coach remembers) |
 | `s` | **Stop / "I don't feel well"**: the safety screen, from anywhere |
@@ -160,7 +171,8 @@ greeting → check-in → menu or today's plan → [activity card → calibratio
    "let's start gently" and targets start two steps lower.
 3. **Check-in:** "How is your hand feeling today?" A thumbs down switches on difficult day mode.
    No answer within 25 s means a normal day.
-4. **Menu:** one exercise, all of today's exercises, "Finish for today", or "My profile". With `--exercise`
+4. **Menu:** one exercise, all of today's exercises, "Arm exercises" (a second menu, key `a`),
+   "Finish for today", or "My profile". With `--exercise`
    there is no menu, only "Today we'll do one exercise." Today's plan (`DAILY_PLAN`) is the six
    hand exercises and memory pairs as a restful end; bubble pinch and two-hand match are in the
    menu only. Grip squeeze (strengthening) is planned only every other day.
@@ -251,6 +263,63 @@ camera frame ─► MediaPipe GestureRecognizer ─► 21 landmarks (image + 3D 
 
 ---
 
+## Arm exercises and movement benchmarks
+
+The arm exercises follow `benchmarks/BENCHMARK_PLAN.md`. Every number they use is in
+`benchmarks/benchmarks.json` (rebuilt from the CSVs in `benchmarks/data` by
+`python benchmarks/tools/build_benchmarks_json.py`) with its source, or is marked **proposed**:
+a project default to tune in testing. The logic is in `rehab/benchmarks.py`.
+
+| Layer | Question | Source | In the app |
+|---|---|---|---|
+| 1. Form | Was it done the right way? | Fugl-Meyer (FMA-UE) 2026 manual | an FMA-style score 0/1/2 per rep: 90° for the arm raises, a straight elbow, no trunk lean or shoulder hike, the lower score when the peak is within the tolerance of the threshold |
+| 2. Range | How far is far enough? | Soucie 2011, Gates 2016, Bain 2015, Levin 2004 | normal range as the ceiling and to reject tracking errors; the angles daily tasks need as milestones ("That's about the arm lift you need to drink from your cup of tea."); the trunk's share of a reach |
+| 3. Personal | What is her target today? | FMA: unaffected side first | the right arm, then the left, is measured; targets climb from her own baseline to her right arm's range, in steps no smaller than the tolerance |
+| Tolerance | Is the change real? | Lazem 2026, Jayavel 2025 | within a rep, differences smaller than the 95% limits of agreement are noise (5–9°); between sessions "your arm lifts higher" is only said for a change of at least the minimum detectable change (MDC, 11–33°) |
+
+| Exercise | View | Measures | Scores and milestones |
+|---|---|---|---|
+| `shoulder_flexion_raise` | side-on | shoulder elevation, elbow, arm in plane, trunk | FMA 13 (and 16); 71 / 86 / 90 / 105 / 108° |
+| `shoulder_abduction_raise` | facing | shoulder elevation, elbow, shoulder hike, trunk | FMA 15 |
+| `hand_to_mouth` | side-on | elbow flexion (and shoulder) | 81 / 100 / 121° (drinking); empty cup only |
+| `hand_to_head` | side-on | elbow flexion, wrist to ear | FMA 7: the hand reaches the ear |
+| `elbow_extension` | side-on | elbow flexion down to 0° | FMA 10; a contracture of 30° or more: not testable |
+| `wrist_extension` | side-on, forearm on the table | hand against the forearm (hand + body tracking) | FMA 19 (at most 1: no resistance); 15 / 33 / 40° |
+| `tabletop_reach` | halfway | hand and trunk movement | Reaching Performance Scale trunk score 0–3 |
+| `finger_to_nose_timed` | facing | touches, time, touch error | FMA 31–33 (adapted: eyes open), right arm first |
+
+**A session with an arm exercise:** activity card → **calibration** (the first time and then
+weekly, as the assessment: the right arm first, 2 practice reps and 3 recorded, then 3 with the
+left; about 10 s rest between reps; she may need to turn her chair) → **setup check** (the camera
+must see the arm, not at the edge, from the right direction: "Please turn your chair so your left
+arm is nearest the screen.") → sets. A rep is: rest position held → move → today's target (hold)
+→ back. After a rep she hears at most one cue ("Keep your elbow straight.", "Keep your back
+against the chair."), and at most one technique cue per set. A rep with a compensation still
+counts. When the camera loses her arm it says so as its own fault: "I can't see your arm. Please
+move into the box."
+
+**Targets (levels):** target = her baseline + level × tolerance, up to the lowest of her right
+arm, the therapist's limit and the norm (160° active shoulder flexion). The level changes once
+per session: +1 after two sessions in a row with at least 80% clean reps (and compensation not
+rising), −1 below 50% success or when most reps were compensated, one lower after two missed
+sessions and on a difficult day. Difficult days never change the saved level. (Proposed rules.)
+
+**Therapist profile** (`benchmarks/therapist_profile.json`): her sex and age for the norms, the
+affected side, seat type, lab or home MDC, passive limits and contractures, and per arm exercise
+whether she may do it alone and its sets, reps, rest and hold. Exercises not cleared for her
+alone show "with your therapist" in the menu and start only with `--exercise`.
+
+**Hand exercises:** grip and release also gets FMA 25/24-style scores and Bain 2015's "open enough
+/ closed enough for 90% of daily tasks" as milestones, and "your hand opened wider" is only said
+for 20° per joint or a rise over three sessions (finger angles are not validated). Every held
+pinch in bubble pinch, and every index touch in thumb opposition, gets an FMA 28-style pinch
+score (at most 1). The arm exercises' intro card shows a seated figure doing the movement, like
+the demo hand of the hand exercises.
+
+The scores are **FMA-style**, for coaching and the report's measurements, not a clinical FMA-UE.
+
+---
+
 ## Motivation features
 
 Think decides what happened and emits events (`rehab/events.py`); Act decides how to say it
@@ -337,7 +406,15 @@ Personal data lives in `data/` and is **not committed** (see `.gitignore`).
 | `history.csv` | one row per exercise per session: means, bests, success rate, targets |
 | `sessions.csv` | one row per session: duration, reps, check-in, difficult day, highlight, garden, therapist note, whether Stop was pressed, and the ratings (exertion, enjoyment, ease) |
 | `garden.json` | the garden's plants and growth |
-| `tracking_check.csv`, `validation.csv` | results of the tools below |
+| `benchmark_reps.csv` | arm (and benchmark) reps: level, target, tolerance, start and peak angle, FMA-style score, coaching success, compensation, rules broken, trunk / shoulder / plane measures, cue, tracking quality |
+| `benchmark_sessions.csv` | per session with arm exercises: seat, camera check, clean success and compensation rates, bests, improvement claims, milestones, level changes |
+| `tracking_check.csv`, `validation.csv`, `body_check.csv`, `angle_agreement.csv` | results of the tools below |
+
+`profile.json` also keeps the arm calibrations (both sides, her baseline, symmetry), the weekly
+assessments, the levels and the milestones already announced.
+
+The two benchmark logs are the objective measures for the report's testing section:
+repetitions, clean success, compensation and the FMA-style profile over time.
 
 `profile.json`, `garden.json` and `sessions.csv` are written to a temporary file first and then
 renamed, so a crash never leaves half a file. An unreadable file is set aside
@@ -349,7 +426,7 @@ guest profile starts with the first coach name and three activities chosen, so t
 first-time questions. `python -m tools.report` reads `data/` and every guest folder.
 
 **Deleting the profile** (profile screen, `d` then `y`) removes `profile.json`, `garden.json`,
-`reps.csv`, `history.csv` and `sessions.csv` together. By default they are moved to
+`reps.csv`, `history.csv`, `sessions.csv` and the two benchmark logs together. By default they are moved to
 `data/deleted/<time>/`, so a therapist can still put them back; set `KEEP_DELETED_PROFILE = False`
 in `rehab/config.py` to erase them for good.
 
@@ -368,6 +445,9 @@ in `rehab/config.py` to erase them for good.
   Set `"name"` to fix the name instead of letting her choose.
 - **`content/activities.json`**: the daily activities, their icons, and which exercise practises
   which activity.
+- **`benchmarks/therapist_profile.json`**: the arm exercises she may do alone, their sets, reps,
+  rest and hold, her side, sex and age for the norms, and any limits or contractures.
+- **`benchmarks/data/*.csv`**: the benchmark numbers; rebuild `benchmarks.json` afterwards.
 
 ---
 
@@ -376,13 +456,18 @@ in `rehab/config.py` to erase them for good.
 ```
 main.py                    wiring: Sense → features → Think → Act (nothing imports it)
 rehab/config.py            all settings and per-exercise parameters
-rehab/Sense.py             camera / video, MediaPipe GestureRecognizer → HandObservation
+rehab/Sense.py             camera / video, MediaPipe GestureRecognizer → HandObservation, PoseLandmarker → PoseObservation
 rehab/features.py          landmarks → HandFeatures (angles, openness, spread, distances, quality flags,
                            the other hand, raised-finger count)
-rehab/filters.py           One Euro filter
-rehab/calibration.py       per-exercise capture of her range (median over a 3 s hold)
+rehab/body.py              pose landmarks → BodyFeatures (arm angles in pixels, trunk, view, setup check)
+rehab/filters.py           One Euro filter; 6 Hz low-pass for body angles
+rehab/benchmarks.py        benchmarks.json, FMA-style rep scoring, ladder, MDC claims, progression, RPS, FMA 31-33
+rehab/calibration.py       per-exercise capture of her range (median over a 3 s hold); arm: right then left, setup check
 rehab/exercises/base.py    Exercise base, hysteresis, two-phase and sequence engines, rep quality measures
-rehab/exercises/*.py       the nine exercises
+rehab/exercises/*.py       the nine hand exercises
+rehab/exercises/arm.py     arm exercise engine: rep state machine, form and compensation rules, cues
+rehab/exercises/arm_raise.py, elbow_bend.py, wrist_extension.py, tabletop_reach.py, finger_to_nose.py
+                           the eight arm exercises
 rehab/Think.py             Coach (quality checks, logging, rep events) + SessionManager (session flow)
 rehab/events.py            events with priorities: what Think tells Act
 rehab/progress.py          personal bests, adaptive targets, difficult days, milestones
@@ -398,12 +483,14 @@ rehab/handmodel.py         a kinematic hand (joint angles → 21 landmarks), for
 rehab/sound.py             finger piano notes (WAV files, played by the system player)
 rehab/storage.py           profile.json, reps.csv, history.csv, sessions.csv, garden.json
 content/                   character.json, phrases.json, activities.json (edit wording here)
+benchmarks/                BENCHMARK_PLAN.md, benchmarks.json, data/ (sources), therapist_profile.json
 assets/                    fonts (Atkinson Hyperlegible), optional icons and garden PNGs
 models/                    MediaPipe models (the app uses gesture_recognizer.task)
 tools/tracking_check.py    detection rate and jitter of each measure with your camera
 tools/validate.py          program rep count vs. a count by hand, on recorded videos
 tools/report.py            tables, charts and report.md from all saved data (including guests)
-tests/                     unit and session tests driven by a synthetic 3D hand
+tools/body_check.py        arm angle jitter vs. tolerance, and agreement with a goniometer
+tests/                     unit and session tests driven by a synthetic 3D hand and a synthetic body
 ```
 
 ---
@@ -415,9 +502,10 @@ pip install pytest
 python -m pytest tests
 ```
 
-The 163 tests need no camera or speaker. `rehab/handmodel.py` builds a 3D hand in any pose,
-so exercises, calibration, whole sessions, speech priority, the motivation rules, storage and the
-text-to-speech backend choice are all tested with made-up hands.
+The 240 tests need no camera or speaker. `rehab/handmodel.py` builds a 3D hand in any pose
+and `tests/synthetic_body.py` a seated body with any arm angles, so exercises, calibration, whole
+sessions, the benchmark scoring, speech priority, the motivation rules, storage and the
+text-to-speech backend choice are all tested with made-up hands and bodies.
 
 - `python -m tools.tracking_check --seconds 30` shows how often the hand is detected and how much
   each measure jitters with your camera and light. `--record file.mp4` also saves the video,
@@ -429,6 +517,9 @@ text-to-speech backend choice are all tested with made-up hands.
   apart: sessions, reps, success rate, range, hints and compensation per rep, movement time,
   smoothness, symmetry, turns), `sessions.csv` with the ratings, `report.md` with plain tables,
   and PNG charts of progress and ratings.
+- `python -m tools.body_check --seconds 20` shows the arm angles live and how much they jitter
+  compared with the tolerance. With `--joint left.shoulder_elevation --goniometer 90 --note ...`
+  it logs the camera's angle next to a phone goniometer's in `data/angle_agreement.csv`.
 
 ---
 
@@ -447,6 +538,13 @@ text-to-speech backend choice are all tested with made-up hands.
    for two-hand match, and whether the finger-piano notes and the voice can be heard together.
 6. Fill in `HELPER_NAME` and `HELPER_PHONE` in `rehab/config.py` if the Stop screen should show a
    person to call.
+7. Arm exercises: set up as in the plan (camera about 1.5 m away, lens about 90 cm high, even
+   light, short sleeves). Run `python -m tools.body_check` sitting still in each view: the
+   filtered jitter should stay below the tolerance. Then hold an arm at about 5 angles measured
+   with a phone goniometer, on 2 people (`--goniometer`), and compare the differences with
+   Lazem 2026. Repeat a calibration on two days to see whether the MDC fits your setup.
+8. Have the therapist fill in `benchmarks/therapist_profile.json` (which arm exercises she may do
+   alone, limits, contractures, seat).
 
 ## At the marketplace
 
@@ -474,6 +572,14 @@ text-to-speech backend choice are all tested with made-up hands.
   starting values for testing, not clinical values.
 - The app gives no medical advice. Repeated difficult days only leave a note for her therapist
   or family.
+- The arm scores are "FMA-style", not a clinical FMA-UE. Items that need resistance are capped at
+  1. The normative data stop at age 69 and are passive range; the daily-task angles come from
+  young healthy adults with 3D motion capture, and 2D webcam angles only approximate them.
+  MediaPipe finger angles and wrist change thresholds are not validated; Lazem's reference was
+  Kinovea, not 3D motion capture. See `benchmarks/BENCHMARK_PLAN.md` section 15.
+- Pain is not asked yet, so the plan's "pause when pain rises" rule is in
+  `benchmarks.next_level()` but has no input. The right hand is not measured as a reference for
+  grip and release, and the tremor score of finger to nose is only a rough stand-in.
 - Adapting hold time instead of range is not needed: every range exercise measures range. The two
   sequence exercises keep their own levels.
 - Finger counting for the ratings needs clearly straight fingers; keys 1–5 always work. A thumbs up
@@ -508,3 +614,7 @@ animation) and was rebuilt step by step into the hand coach:
    a demo hand for every exercise, Stop / "I don't feel well" with 112, "Exercise 2 of 7" and a
    repeat key, the finger piano, and three new exercises: bubble pinch, two-hand match and
    memory pairs.
+9. **Movement benchmarks**: body tracking and eight arm exercises scored against the
+   Fugl-Meyer form rules, normative and daily-task ranges and MediaPipe's measurement error;
+   right-then-left calibration as a weekly assessment, a target ladder with levels, MDC-gated
+   progress claims, benchmark logs, hand benchmark scores, and `tools/body_check.py`.

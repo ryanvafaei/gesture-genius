@@ -1,0 +1,2026 @@
+{
+  "meta": {
+    "name": "Eleanor rehab coach - movement benchmarks",
+    "version": "1.0",
+    "date": "2026-09-24",
+    "persona": {
+      "name": "Eleanor",
+      "age": 72,
+      "sex": "female",
+      "affected_side": "left",
+      "unaffected_side": "right"
+    },
+    "conventions": {
+      "angles": "degrees; clinical zero (0 = neutral/straight); flexion positive",
+      "sign_in_sources": "GATES2016 extension/external rotation/supination are negative; stored here as positive magnitudes where noted",
+      "provenance": "every value has `source` or `proposed: true`"
+    },
+    "disclaimer": "Benchmarks adapted from published clinical instruments and normative data for a student prototype. Not a clinical assessment and not validated for this system."
+  },
+  "sources": {
+    "FMA2026": {
+      "citation": "Hervé-Colas J, Newton SP, Engelter ST, et al., Alt Murphy M. Standardized international manual of the Fugl-Meyer Assessment of motor function after stroke. Neurorehabil Neural Repair. 2026. FMA-UE instruction manual, University of Gothenburg, May 2026.",
+      "doi": "10.1177/15459683251412300",
+      "used_for": "Layer 1 item criteria (0/1/2), general scoring rules, start positions, compensation bans, time rule for coordination",
+      "limits": "Assessment tool, not a training target; several items need an assessor's resistance, a reflex hammer or objects; webcam scores are 'FMA-style', not a clinical FMA score. Free for clinical/research use without charge; cite the publication."
+    },
+    "SOUCIE2011": {
+      "citation": "Soucie JM, Wang C, Forsyth A, et al. Range of motion measurements: reference values and a database for comparison studies. Haemophilia. 2011;17:500-507.",
+      "doi": "10.1111/j.1365-2516.2010.02399.x",
+      "used_for": "Layer 2a normative ROM ceilings and plausibility limits (female/male, 45-69 y)",
+      "limits": "Passive ROM with goniometer, supine for shoulder/elbow; healthy US volunteers up to 69 y (Eleanor is 72); active ROM after stroke will be lower. Left-right differences < 1 deg, supporting the healthy limb as reference."
+    },
+    "GATES2016": {
+      "citation": "Gates DH, Walters LS, Cowley J, Wilken JM, Resnik L. Range of motion requirements for upper-limb activities of daily living. Am J Occup Ther. 2016;70(1):7001350010.",
+      "doi": "10.5014/ajot.2016.015487",
+      "used_for": "Layer 2b functional ROM milestones per daily task (drinking, shelf reach, dressing); healthy trunk-motion reference",
+      "limits": "15 healthy young adults (mean 26 y), right arm, 3D motion capture with globe angles; webcam 2D angles only approximate these definitions."
+    },
+    "BAIN2015": {
+      "citation": "Bain GI, Polites N, Higgs BG, Heptinstall RJ, McGrath AM. The functional range of motion of the finger joints. J Hand Surg Eur Vol. 2015;40(4):406-411.",
+      "doi": "10.1177/1753193414533754",
+      "used_for": "Layer 2b finger ROM needed for 90% of Sollerman ADL tasks; active finger ROM ceiling",
+      "limits": "10 healthy volunteers aged 18-53, dominant hand, electrogoniometer; MediaPipe finger angles are not validated against it."
+    },
+    "LEVIN2004": {
+      "citation": "Levin MF, Desrosiers J, Beauchemin D, Bergeron N, Rochette A. Development and validation of a scale for rating motor compensations used for reaching in patients with hemiparesis: the Reaching Performance Scale. Phys Ther. 2004;84(1):8-22.",
+      "url": "https://academic.oup.com/ptj/article/84/1/8/2805317",
+      "used_for": "Layer 2c compensation rules for reaching (trunk share of reach, shoulder/elbow contribution), reach task setup",
+      "limits": "Observational 0-3 scale; preliminary reliability (kappa .14-.85); sample younger than typical stroke population."
+    },
+    "LAZEM2026": {
+      "citation": "Lazem H, Harris D, Hall A, et al. Validity and reliability of the Track-UL algorithm compared with Kinovea software for measuring upper-limb functional range of motion in people after stroke. JMIR Rehabil Assist Technol. 2026;13:e87128.",
+      "doi": "10.2196/87128",
+      "used_for": "Measurement tolerance (95% limits of agreement) and minimum detectable change for MediaPipe 2D shoulder/elbow angles in stroke; camera setup",
+      "limits": "Reference was Kinovea (2D video tool), not 3D motion capture; 27 chronic stroke survivors; only 13/27 produced usable home videos."
+    },
+    "JAYAVEL2025": {
+      "citation": "Jayavel P, Srinivasan HK, Karthik V, Fouly A, Devaraj A. Human upper limb kinematics using a novel algorithm in post-stroke patients. Proc Inst Mech Eng H. 2025;239(1):48-55.",
+      "doi": "10.1177/09544119251315421",
+      "used_for": "Agreement of MediaPipe (BlazePose + BlazeHand) with a goniometer for elbow, wrist and shoulder rotation; wrist angle landmark choice",
+      "limits": "10 patients; Results text swaps some bias values vs Table 1 (Table 1 used here)."
+    },
+    "GILL2020_via_FMA2026": {
+      "citation": "Gill TK, Shanahan EM, Tucker GR, et al. Shoulder range of movement in the general population. BMC Musculoskelet Disord. 2020;21:676 - cited in FMA2026 item 16.",
+      "doi": "10.1186/s12891-020-03665-9",
+      "used_for": "Active shoulder flexion ~160 deg in community-living non-disabled adults (secondary citation; original not reviewed)",
+      "limits": "Only the single statement quoted in the FMA manual is used."
+    }
+  },
+  "landmarks": {
+    "pose": {
+      "nose": 0,
+      "left_eye": 2,
+      "right_eye": 5,
+      "left_ear": 7,
+      "right_ear": 8,
+      "left_shoulder": 11,
+      "right_shoulder": 12,
+      "left_elbow": 13,
+      "right_elbow": 14,
+      "left_wrist": 15,
+      "right_wrist": 16,
+      "left_hip": 23,
+      "right_hip": 24,
+      "left_knee": 25,
+      "right_knee": 26,
+      "left_ankle": 27,
+      "right_ankle": 28
+    },
+    "hand": {
+      "wrist": 0,
+      "thumb_cmc": 1,
+      "thumb_mcp": 2,
+      "thumb_ip": 3,
+      "thumb_tip": 4,
+      "index_mcp": 5,
+      "index_pip": 6,
+      "index_dip": 7,
+      "index_tip": 8,
+      "middle_mcp": 9,
+      "middle_pip": 10,
+      "middle_dip": 11,
+      "middle_tip": 12,
+      "ring_mcp": 13,
+      "ring_pip": 14,
+      "ring_dip": 15,
+      "ring_tip": 16,
+      "pinky_mcp": 17,
+      "pinky_pip": 18,
+      "pinky_dip": 19,
+      "pinky_tip": 20
+    },
+    "pose_side_convention": "MediaPipe Pose left/right = the person's own side; verify hand 'handedness' label during calibration because it depends on whether frames are mirrored"
+  },
+  "angle_definitions": {
+    "shoulder_elevation": {
+      "formula": "angle(hip, shoulder, elbow)",
+      "space": "2D pixel coords (x*W, y*H)",
+      "view": "sagittal for flexion, frontal for abduction",
+      "zero": "arm at side = ~0",
+      "matches": "LAZEM2026 shoulder angle (hip-shoulder-elbow, 2D dot product); approximates GATES2016 humeral elevation"
+    },
+    "elbow_flexion": {
+      "formula": "180 - angle(shoulder, elbow, wrist)",
+      "space": "2D pixel coords",
+      "view": "sagittal (or view where the forearm moves in image plane)",
+      "zero": "full extension = 0",
+      "matches": "LAZEM2026 elbow angle; JAYAVEL2025 elbow flexion; SOUCIE2011/GATES2016 clinical convention"
+    },
+    "wrist_extension": {
+      "formula": "signed angle(forearm = pose elbow->pose wrist, hand = hand[0]->hand[9]); sign fixed at calibration so dorsal extension is positive",
+      "space": "2D pixel coords, side view of forearm",
+      "zero": "hand in line with forearm = 0",
+      "matches": "JAYAVEL2025 (BlazePose + BlazeHand) wrist flexion/extension"
+    },
+    "finger_flexion": {
+      "formula": "180 - angle(prev, joint, next) on hand_world_landmarks; MCP=(0,5,6),(0,9,10),(0,13,14),(0,17,18); PIP=(5,6,7),(9,10,11),(13,14,15),(17,18,19); DIP=(6,7,8),(10,11,12),(14,15,16),(18,19,20); thumb MCP=(1,2,3), IP=(2,3,4)",
+      "space": "3D hand world landmarks (metres)",
+      "view": "palm or side facing camera",
+      "zero": "straight joint = 0 (unsigned: hyperextension cannot be distinguished)",
+      "matches": "BAIN2015 joint definitions (MCP/PIP/DIP flexion, 0 = straight)"
+    },
+    "hand_aperture": {
+      "formula": "mean(dist(tip_k, wrist) for tips 4,8,12,16,20) / dist(0, 9)",
+      "space": "3D hand world landmarks",
+      "zero": "normalised, unitless",
+      "matches": "proposed metric (no source)"
+    },
+    "fingertip_to_palm": {
+      "formula": "dist(tip, palm_centre) / dist(0,9); palm_centre = mean(0,5,9,13,17)",
+      "space": "3D hand world landmarks",
+      "matches": "operationalises FMA2026 item 24 'fingertips touching the palm' (threshold proposed)"
+    },
+    "pinch_gap": {
+      "formula": "dist(4, 8) / dist(0, 9)",
+      "space": "3D hand world landmarks",
+      "matches": "operationalises FMA2026 item 28 pad-to-pad opposition (threshold proposed)"
+    },
+    "trunk_flexion": {
+      "formula": "angle between (hip_mid -> shoulder_mid) and image vertical; report change from start frame",
+      "space": "2D pixel coords",
+      "view": "sagittal",
+      "matches": "compensation check (FMA2026 no trunk compensation; GATES2016 healthy ADL trunk motion mostly < 10 deg)"
+    },
+    "trunk_lateral_lean": {
+      "formula": "same as trunk_flexion in frontal view",
+      "space": "2D pixel coords",
+      "view": "frontal",
+      "matches": "FMA2026 item 15 bans lateral trunk compensation"
+    },
+    "shoulder_girdle_elevation": {
+      "formula": "((ear_y - shoulder_y)_start - (ear_y - shoulder_y)_now) / shoulder_width; positive = shoulder hikes toward ear",
+      "space": "2D pixel coords",
+      "view": "frontal",
+      "matches": "FMA2026 item 15 bans shoulder girdle elevation; LEVIN2004 'excessive scapular elevation'"
+    },
+    "upper_arm_in_plane_ratio": {
+      "formula": "len2D(shoulder->elbow) / len2D(shoulder->elbow at start with arm at side)",
+      "space": "2D pixel coords",
+      "matches": "proposed foreshortening check for 'without abduction' (FMA13/16) or 'without flexion' (FMA15); ratio cos(30 deg)=0.87 means ~30 deg out of camera plane"
+    },
+    "trunk_share_of_reach": {
+      "formula": "forward displacement of shoulder_mid / forward displacement of wrist, from reach start to grasp",
+      "space": "2D pixel coords",
+      "view": "sagittal or 45 deg",
+      "matches": "LEVIN2004 trunk displacement component (share of hand displacement done by the trunk)"
+    },
+    "nose_touch_error": {
+      "formula": "dist(hand index_tip, pose nose) / dist(pose left_eye, pose right_eye)",
+      "space": "2D pixel coords",
+      "view": "frontal",
+      "matches": "operationalises FMA2026 item 32 dysmetria (thresholds proposed)"
+    }
+  },
+  "signal_processing": {
+    "pixel_scaling": "multiply normalised x by frame width and y by frame height before any 2D angle (else angles distort with aspect ratio)",
+    "low_pass": {
+      "cutoff_hz": 6,
+      "source": "GATES2016 used a 4th-order low-pass Butterworth at 6 Hz on marker data; use a causal equivalent (e.g., 2nd-order Butterworth or One Euro) in real time"
+    },
+    "visibility_min": {
+      "value": 0.5,
+      "proposed": true
+    },
+    "invalid_frames_pause_s": {
+      "value": 1.0,
+      "proposed": true
+    },
+    "state_debounce_frames": {
+      "value": 5,
+      "proposed": true
+    },
+    "plausibility": "reject angles above SOUCIE2011 group max + tolerance as tracking errors"
+  },
+  "measurement_tolerance": {
+    "abduction.shoulder": {
+      "loa": {
+        "laboratory": [
+          -4.06,
+          6.41
+        ],
+        "home": [
+          -6.21,
+          3.62
+        ]
+      },
+      "mdc": {
+        "laboratory": 11.41,
+        "home": 8.95
+      },
+      "tolerance_deg": 6.5,
+      "tolerance_rule": "max(5 deg goniometer inter-rater floor [SOUCIE2011], worst |95% LoA| affected side lab+home rounded up to 0.5 [LAZEM2026])",
+      "mdc_default_deg": 11.41,
+      "mdc_rule": "use laboratory MDC when the guided camera setup is followed; home MDC is available as a stricter/looser alternative",
+      "source": [
+        "LAZEM2026",
+        "SOUCIE2011"
+      ]
+    },
+    "forward_elevation.elbow": {
+      "loa": {
+        "laboratory": [
+          -8.78,
+          6.29
+        ],
+        "home": [
+          -3.99,
+          1.47
+        ]
+      },
+      "mdc": {
+        "laboratory": 14.77,
+        "home": 36.24
+      },
+      "tolerance_deg": 9.0,
+      "tolerance_rule": "max(5 deg goniometer inter-rater floor [SOUCIE2011], worst |95% LoA| affected side lab+home rounded up to 0.5 [LAZEM2026])",
+      "mdc_default_deg": 14.77,
+      "mdc_rule": "use laboratory MDC when the guided camera setup is followed; home MDC is available as a stricter/looser alternative",
+      "source": [
+        "LAZEM2026",
+        "SOUCIE2011"
+      ]
+    },
+    "forward_elevation.shoulder": {
+      "loa": {
+        "laboratory": [
+          -5.07,
+          5.05
+        ],
+        "home": [
+          -2.66,
+          3.45
+        ]
+      },
+      "mdc": {
+        "laboratory": 13.19,
+        "home": 6.35
+      },
+      "tolerance_deg": 5.5,
+      "tolerance_rule": "max(5 deg goniometer inter-rater floor [SOUCIE2011], worst |95% LoA| affected side lab+home rounded up to 0.5 [LAZEM2026])",
+      "mdc_default_deg": 13.19,
+      "mdc_rule": "use laboratory MDC when the guided camera setup is followed; home MDC is available as a stricter/looser alternative",
+      "source": [
+        "LAZEM2026",
+        "SOUCIE2011"
+      ]
+    },
+    "hand_to_head.elbow": {
+      "loa": {
+        "laboratory": [
+          -2.49,
+          2.33
+        ],
+        "home": [
+          -3.79,
+          2.53
+        ]
+      },
+      "mdc": {
+        "laboratory": 32.65,
+        "home": 16.48
+      },
+      "tolerance_deg": 5.0,
+      "tolerance_rule": "max(5 deg goniometer inter-rater floor [SOUCIE2011], worst |95% LoA| affected side lab+home rounded up to 0.5 [LAZEM2026])",
+      "mdc_default_deg": 32.65,
+      "mdc_rule": "use laboratory MDC when the guided camera setup is followed; home MDC is available as a stricter/looser alternative",
+      "source": [
+        "LAZEM2026",
+        "SOUCIE2011"
+      ]
+    },
+    "hand_to_head.shoulder": {
+      "loa": {
+        "laboratory": [
+          -3.18,
+          3.22
+        ],
+        "home": [
+          -3.54,
+          3.09
+        ]
+      },
+      "mdc": {
+        "laboratory": 18.19,
+        "home": 12.54
+      },
+      "tolerance_deg": 5.0,
+      "tolerance_rule": "max(5 deg goniometer inter-rater floor [SOUCIE2011], worst |95% LoA| affected side lab+home rounded up to 0.5 [LAZEM2026])",
+      "mdc_default_deg": 18.19,
+      "mdc_rule": "use laboratory MDC when the guided camera setup is followed; home MDC is available as a stricter/looser alternative",
+      "source": [
+        "LAZEM2026",
+        "SOUCIE2011"
+      ]
+    },
+    "hand_to_mouth.elbow": {
+      "loa": {
+        "laboratory": [
+          -5.35,
+          3.81
+        ],
+        "home": [
+          -4.06,
+          2.05
+        ]
+      },
+      "mdc": {
+        "laboratory": 20.55,
+        "home": 25.28
+      },
+      "tolerance_deg": 5.5,
+      "tolerance_rule": "max(5 deg goniometer inter-rater floor [SOUCIE2011], worst |95% LoA| affected side lab+home rounded up to 0.5 [LAZEM2026])",
+      "mdc_default_deg": 20.55,
+      "mdc_rule": "use laboratory MDC when the guided camera setup is followed; home MDC is available as a stricter/looser alternative",
+      "source": [
+        "LAZEM2026",
+        "SOUCIE2011"
+      ]
+    },
+    "hand_to_mouth.shoulder": {
+      "loa": {
+        "laboratory": [
+          -3.31,
+          2.84
+        ],
+        "home": [
+          -2.95,
+          2.41
+        ]
+      },
+      "mdc": {
+        "laboratory": 11.65,
+        "home": 11.92
+      },
+      "tolerance_deg": 5.0,
+      "tolerance_rule": "max(5 deg goniometer inter-rater floor [SOUCIE2011], worst |95% LoA| affected side lab+home rounded up to 0.5 [LAZEM2026])",
+      "mdc_default_deg": 11.65,
+      "mdc_rule": "use laboratory MDC when the guided camera setup is followed; home MDC is available as a stricter/looser alternative",
+      "source": [
+        "LAZEM2026",
+        "SOUCIE2011"
+      ]
+    },
+    "wrist_flexion_extension": {
+      "loa": {
+        "goniometer": [
+          -1.98,
+          0.92
+        ],
+        "goniometer_flexion": [
+          -1.77,
+          1.5
+        ]
+      },
+      "tolerance_deg": 5.0,
+      "tolerance_rule": "LoA < 2 deg vs goniometer (n=10) is below the 5 deg goniometer floor, so floor used",
+      "mdc_default_deg": null,
+      "mdc_rule": "no test-retest data; use 2 x tolerance as provisional change threshold",
+      "provisional_change_threshold_deg": 10.0,
+      "source": [
+        "JAYAVEL2025",
+        "SOUCIE2011"
+      ],
+      "proposed_parts": [
+        "provisional_change_threshold_deg"
+      ]
+    },
+    "elbow_flexion_simple": {
+      "loa": {
+        "goniometer": [
+          -2.7,
+          1.62
+        ]
+      },
+      "tolerance_deg": 5.0,
+      "tolerance_rule": "goniometer floor (single-plane elbow flexion; JAYAVEL2025 LoA -2.7 to 1.62)",
+      "mdc_default_deg": 20.55,
+      "mdc_rule": "borrow LAZEM2026 hand-to-mouth elbow MDC",
+      "source": [
+        "JAYAVEL2025",
+        "LAZEM2026",
+        "SOUCIE2011"
+      ]
+    },
+    "finger_joints": {
+      "tolerance_deg": 10.0,
+      "proposed": true,
+      "tolerance_rule": "no MediaPipe finger-angle validation in the reviewed sources; 10 deg provisional, prefer normalised metrics relative to calibration",
+      "mdc_default_deg": null,
+      "provisional_change_threshold_deg": 20.0,
+      "proposed_parts": [
+        "tolerance_deg",
+        "provisional_change_threshold_deg"
+      ]
+    },
+    "trunk": {
+      "tolerance_deg": 5.0,
+      "compensation_threshold_deg": 10.0,
+      "rule": "trunk change > 10 deg from start = compensation cue; GATES2016 found most healthy ADLs used < 10 deg trunk/pelvis motion; 5 deg floor as above",
+      "source": [
+        "GATES2016",
+        "SOUCIE2011"
+      ],
+      "note": "derived use of a descriptive finding, not a published cut-off"
+    }
+  },
+  "layer1_fma": {
+    "source": "FMA2026",
+    "general_rules": {
+      "position": {
+        "rule": "Standard position: sitting on a chair without armrests; alternative position (armchair, wheelchair) allowed if documented; assessor decides if correct scoring is possible, else 'not testable' = 0",
+        "engine": "log seat_type per session; flag scores from non-standard seat"
+      },
+      "demo": {
+        "rule": "Each movement explained and demonstrated by the assessor sitting in front; physical guidance to demonstrate is allowed",
+        "engine": "play demo clip + one spoken instruction before first rep"
+      },
+      "repetitions": {
+        "rule": "Keep repetitions low (1-3); score best performance if it varies",
+        "engine": "assessment mode: 3 attempts, item score = best attempt"
+      },
+      "non_affected_first": {
+        "rule": "Movement can be performed with the non-affected arm first to check understanding and for comparison",
+        "engine": "calibrate right (unaffected) side first; store as personal reference"
+      },
+      "no_assistance": {
+        "rule": "In general no assistance for active movements of tested body parts (item-specific exceptions listed)",
+        "engine": "supervisor check-in cannot help the tested limb; log assistance flag"
+      },
+      "scale": {
+        "rule": "All items scored 0-2",
+        "engine": "rep_score in {0,1,2}"
+      },
+      "no_compensation": {
+        "rule": "Compensatory movements with other body parts (e.g., trunk) are not allowed",
+        "engine": "any compensation flag caps rep_score at 1"
+      },
+      "uncertainty": {
+        "rule": "A lower score should be selected if uncertainty exists between levels",
+        "engine": "if peak within tolerance band of threshold -> choose lower score for the logged FMA-style score"
+      },
+      "non_affected_reference": {
+        "rule": "Non-affected arm performance can be used as reference when it is unimpaired",
+        "engine": "targets for items using 'non-affected side' criteria = right-side calibration"
+      },
+      "passive_rom_first": {
+        "rule": "Test passive ROM before scoring items that require full active range",
+        "engine": "therapist-entered passive limits (optional) cap targets"
+      },
+      "contracture": {
+        "rule": "If passive ROM limited by contracture > 1/4 of normal range, item max score is 1 or 0 and reason noted",
+        "engine": "if therapist marks contracture > 25% of normative range: cap rep_score at 1"
+      },
+      "elbow_deficit": {
+        "rule": "Elbow extension deficit up to 30 deg from contracture (not spasticity) counts as maximum available range; >= 30 deg -> item not testable (score 0)",
+        "engine": "elbow_extension_target = max(0, therapist_contracture_deficit) if deficit < 30 else mark item not_testable"
+      },
+      "not_testable": {
+        "rule": "Movement not performable due to pain, apraxia etc. -> not testable, scored 0 with reason",
+        "engine": "allow therapist to disable item; never show 'fail' to user"
+      },
+      "spasticity": {
+        "rule": "If spasticity present, use slow stretch to test passive ROM",
+        "engine": "therapist input only"
+      }
+    },
+    "numeric_thresholds": {
+      "FMA05_abduction_in_synergy_deg": 90,
+      "FMA13_shoulder_flexion_deg": 90,
+      "FMA15_shoulder_abduction_deg": 90,
+      "FMA16_shoulder_flexion_full": "max available (~160 deg reference)",
+      "FMA10_elbow_extension_deg": 0,
+      "FMA13_15_16_elbow_contracture_allowed_deg": 30,
+      "FMA19_21_wrist_dorsal_extension_deg": 15,
+      "FMA20_22_min_full_cycles": 2,
+      "FMA33_time_diff_s": {
+        "score2_lt": 2.0,
+        "score1_range": [
+          2.0,
+          5.9
+        ],
+        "score0_ge": 6.0
+      },
+      "FMA31_33_reps": 5,
+      "contracture_cap_fraction_of_normal_range": 0.25
+    },
+    "items": {
+      "01": {
+        "section": "A.I Reflex",
+        "item_name": "Flexors (biceps/finger) reflex",
+        "score_0": "No reflex activity",
+        "score_1": "(no score 1)",
+        "score_2": "Reflex activity can be elicited",
+        "webcam_feasibility": "none",
+        "max_score_measurable_by_webcam": "",
+        "signals_to_measure": "needs reflex hammer",
+        "key_numeric_criteria": "",
+        "start_position": "sitting, hand in lap, forearm supinated",
+        "not_allowed_or_notes": ""
+      },
+      "02": {
+        "section": "A.I Reflex",
+        "item_name": "Extensors (triceps) reflex",
+        "score_0": "No reflex activity",
+        "score_1": "(no score 1)",
+        "score_2": "Reflex activity can be elicited",
+        "webcam_feasibility": "none",
+        "max_score_measurable_by_webcam": "",
+        "signals_to_measure": "needs reflex hammer",
+        "key_numeric_criteria": "",
+        "start_position": "sitting",
+        "not_allowed_or_notes": ""
+      },
+      "03": {
+        "section": "A.II Flexor synergy",
+        "item_name": "Shoulder girdle retraction",
+        "score_0": "No retraction",
+        "score_1": "Performs only partially",
+        "score_2": "Retraction >= end position on non-affected side",
+        "webcam_feasibility": "low",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "shoulder landmark depth (z) vs non-affected side; unreliable in 2D",
+        "key_numeric_criteria": "reference = non-affected side",
+        "start_position": "hand outside opposite knee, elbow 0, forearm pronated",
+        "not_allowed_or_notes": "trunk/head flexion or rotation"
+      },
+      "04": {
+        "section": "A.II Flexor synergy",
+        "item_name": "Shoulder girdle elevation",
+        "score_0": "No elevation",
+        "score_1": "Performs only partially",
+        "score_2": "Elevation >= end position on non-affected side",
+        "webcam_feasibility": "medium",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "shoulder-to-ear vertical distance vs non-affected side (frontal view)",
+        "key_numeric_criteria": "reference = non-affected side",
+        "start_position": "as item 03",
+        "not_allowed_or_notes": "trunk/head flexion or rotation"
+      },
+      "05": {
+        "section": "A.II Flexor synergy",
+        "item_name": "Shoulder abduction 90",
+        "score_0": "No abduction",
+        "score_1": "Any abduction < 90 deg",
+        "score_2": "Shoulder abduction to 90 deg (>= 90, not necessarily max)",
+        "webcam_feasibility": "high",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "shoulder abduction angle hip-shoulder-elbow (frontal view)",
+        "key_numeric_criteria": "90 deg",
+        "start_position": "as item 03",
+        "not_allowed_or_notes": "trunk/head flexion or rotation"
+      },
+      "06": {
+        "section": "A.II Flexor synergy",
+        "item_name": "Shoulder external rotation",
+        "score_0": "No external rotation",
+        "score_1": "Less than full passive range",
+        "score_2": "Full external rotation with hand touching the ear",
+        "webcam_feasibility": "low",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "forearm orientation; hand-to-ear contact",
+        "key_numeric_criteria": "hand touches ear",
+        "start_position": "as item 03",
+        "not_allowed_or_notes": "trunk/head flexion or rotation"
+      },
+      "07": {
+        "section": "A.II Flexor synergy",
+        "item_name": "Elbow flexion",
+        "score_0": "No elbow flexion",
+        "score_1": "Less than full passive range",
+        "score_2": "Full elbow flexion with hand touching the ear",
+        "webcam_feasibility": "high",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "elbow flexion angle + wrist/index-to-ear distance",
+        "key_numeric_criteria": "hand touches ear (almost full active movement)",
+        "start_position": "as item 03",
+        "not_allowed_or_notes": "trunk/head flexion or rotation"
+      },
+      "08": {
+        "section": "A.II Flexor synergy",
+        "item_name": "Forearm supination",
+        "score_0": "No supination",
+        "score_1": "Less than full passive range",
+        "score_2": "Full supination",
+        "webcam_feasibility": "medium",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "palm normal from hand landmarks (0,5,17) relative to forearm",
+        "key_numeric_criteria": "full supination vs non-affected side",
+        "start_position": "as item 03",
+        "not_allowed_or_notes": "trunk/head flexion or rotation"
+      },
+      "09": {
+        "section": "A.II Extensor synergy",
+        "item_name": "Shoulder adduction/internal rotation",
+        "score_0": "No adduction/IR",
+        "score_1": "Performs only partially",
+        "score_2": "Across midline enough to reach end position (opposite knee)",
+        "webcam_feasibility": "medium",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "wrist crosses body midline and reaches contralateral knee zone",
+        "key_numeric_criteria": "reach opposite knee",
+        "start_position": "hand near ipsilateral ear, shoulder abd 90, elbow flexed, supinated",
+        "not_allowed_or_notes": "trunk flexion or rotation"
+      },
+      "10": {
+        "section": "A.II Extensor synergy",
+        "item_name": "Elbow extension",
+        "score_0": "No elbow extension",
+        "score_1": "Performs only partially",
+        "score_2": "Full elbow extension to 0 deg",
+        "webcam_feasibility": "high",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "elbow flexion angle -> 0 (within available passive range)",
+        "key_numeric_criteria": "0 deg (full extension)",
+        "start_position": "as item 09",
+        "not_allowed_or_notes": "trunk flexion or rotation"
+      },
+      "11": {
+        "section": "A.II Extensor synergy",
+        "item_name": "Forearm pronation",
+        "score_0": "No pronation",
+        "score_1": "Performs only partially",
+        "score_2": "Pronation enough for palm outside contralateral knee",
+        "webcam_feasibility": "medium",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "palm normal orientation at end position",
+        "key_numeric_criteria": "palm on lateral side of opposite knee",
+        "start_position": "as item 09",
+        "not_allowed_or_notes": "trunk flexion or rotation"
+      },
+      "12": {
+        "section": "A.III Mixed synergy",
+        "item_name": "Hand to lumbar spine",
+        "score_0": "Hand does not pass ASIS or only via gravity tricks/compensation",
+        "score_1": "Past ASIS without compensation, end position not reached",
+        "score_2": "Dorsal hand touches lumbar spine, MCPs past spinous processes, no trunk compensation",
+        "webcam_feasibility": "none",
+        "max_score_measurable_by_webcam": "",
+        "signals_to_measure": "hand hidden behind body",
+        "key_numeric_criteria": "",
+        "start_position": "sitting on chair edge, hand in lap",
+        "not_allowed_or_notes": "gravity tricks, momentum, trunk compensation"
+      },
+      "13": {
+        "section": "A.III Mixed synergy",
+        "item_name": "Shoulder flexion 0-90, elbow 0",
+        "score_0": "No flexion OR cannot obtain/maintain start with extended elbow (elbow flexion and/or abduction immediately)",
+        "score_1": "Partial OR elbow flexion and/or abduction before 90 deg",
+        "score_2": "Pure shoulder flexion to 90 deg without abduction, full elbow extension maintained",
+        "webcam_feasibility": "high",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "shoulder elevation angle (sagittal view), elbow flexion angle, plane-of-elevation / out-of-plane check",
+        "key_numeric_criteria": "90 deg; elbow 0 (contracture deficit up to 30 deg = max available; >=30 deg -> not testable)",
+        "start_position": "arm at side, elbow 0, forearm neutral, palm to body, wrist neutral",
+        "not_allowed_or_notes": "no support; wrist/fingers not scored"
+      },
+      "14": {
+        "section": "A.III Mixed synergy",
+        "item_name": "Pronation-supination, elbow 90",
+        "score_0": "No movement OR cannot hold start OR one direction only",
+        "score_1": "Not full range but stable OR loses start position before full range",
+        "score_2": "Full pronation and supination with maintained elbow and shoulder positions",
+        "webcam_feasibility": "medium",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "palm normal rotation range; elbow angle stays ~90; shoulder stays neutral",
+        "key_numeric_criteria": "full range vs non-affected side",
+        "start_position": "shoulder neutral, elbow ~90, forearm neutral",
+        "not_allowed_or_notes": "shoulder abduction/rotation compensation"
+      },
+      "15": {
+        "section": "A.IV Little/no synergy",
+        "item_name": "Shoulder abduction 0-90, elbow 0",
+        "score_0": "No abduction OR cannot obtain/maintain start with extended elbow",
+        "score_1": "Partial OR elbow flexion and/or forearm supination before 90 deg",
+        "score_2": "Pure abduction to 90 deg with elbow extension and forearm position maintained",
+        "webcam_feasibility": "high",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "shoulder abduction angle (frontal view), elbow flexion angle, trunk lateral lean, shoulder girdle elevation",
+        "key_numeric_criteria": "90 deg; elbow 0",
+        "start_position": "arm at side, elbow 0, forearm neutral, palm to body",
+        "not_allowed_or_notes": "lateral trunk compensation, shoulder girdle elevation"
+      },
+      "16": {
+        "section": "A.IV Little/no synergy",
+        "item_name": "Shoulder flexion 90-180, elbow 0",
+        "score_0": "No flexion beyond 90 OR cannot obtain/maintain start with extended elbow",
+        "score_1": "Partial OR elbow flexion/abduction before full flexion",
+        "score_2": "Full pure shoulder flexion with full elbow extension, no abduction",
+        "webcam_feasibility": "high",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "shoulder elevation angle 90->max (sagittal view), elbow flexion angle, out-of-plane check",
+        "key_numeric_criteria": "full = max available ROM; manual cites ~160 deg active flexion in community non-disabled adults (Gill 2020)",
+        "start_position": "shoulder 90, elbow 0, forearm neutral, thumb up",
+        "not_allowed_or_notes": "no support"
+      },
+      "17": {
+        "section": "A.IV Little/no synergy",
+        "item_name": "Pronation-supination, elbow 0",
+        "score_0": "No movement OR cannot hold start OR one direction only",
+        "score_1": "Not full range but stable OR loses start before full range",
+        "score_2": "Full pronation and supination with maintained elbow and shoulder positions",
+        "webcam_feasibility": "medium",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "palm normal rotation range with elbow ~0 and shoulder ~30 flexion",
+        "key_numeric_criteria": "full range vs non-affected side; carrying angle 5-15 deg is normal",
+        "start_position": "shoulder ~30 flexion, elbow 0, forearm neutral",
+        "not_allowed_or_notes": "trunk or shoulder compensation"
+      },
+      "18": {
+        "section": "A.V Normal reflex",
+        "item_name": "Normal reflex activity",
+        "score_0": "2+ reflexes markedly hyperactive OR <6 in part IV",
+        "score_1": "1 markedly hyperactive OR 2+ lively",
+        "score_2": "Max 1 lively, none markedly hyperactive",
+        "webcam_feasibility": "none",
+        "max_score_measurable_by_webcam": "",
+        "signals_to_measure": "needs reflex testing",
+        "key_numeric_criteria": "",
+        "start_position": "",
+        "not_allowed_or_notes": ""
+      },
+      "19": {
+        "section": "B Wrist",
+        "item_name": "Wrist stability 15 deg dorsal extension, elbow 90",
+        "score_0": "Cannot reach 15 deg dorsal extension",
+        "score_1": "Reaches 15 deg but cannot hold against resistance",
+        "score_2": "Holds 15 deg against resistance",
+        "webcam_feasibility": "high (score 1 only)",
+        "max_score_measurable_by_webcam": "1",
+        "signals_to_measure": "wrist extension angle = forearm (pose elbow->wrist) vs hand (hand 0->9)",
+        "key_numeric_criteria": "15 deg dorsal extension (assessed visually in manual)",
+        "start_position": "shoulder neutral, elbow ~90, forearm pronated",
+        "not_allowed_or_notes": "elbow/shoulder may be supported by assessor"
+      },
+      "20": {
+        "section": "B Wrist",
+        "item_name": "Repeated wrist extension/flexion, elbow 90",
+        "score_0": "No movement OR one direction only",
+        "score_1": "Not full range but both directions OR only one cycle",
+        "score_2": "At least two full-range extension/flexion cycles",
+        "webcam_feasibility": "high",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "wrist flex/ext angle time series; cycle count; range vs non-affected side",
+        "key_numeric_criteria": "2 full cycles; speed not scored",
+        "start_position": "shoulder neutral, elbow ~90, forearm pronated",
+        "not_allowed_or_notes": "elbow or shoulder compensation"
+      },
+      "21": {
+        "section": "B Wrist",
+        "item_name": "Wrist stability 15 deg dorsal extension, elbow 0",
+        "score_0": "Cannot reach 15 deg",
+        "score_1": "Reaches 15 deg but cannot hold against resistance",
+        "score_2": "Holds 15 deg against resistance (>= non-affected arm)",
+        "webcam_feasibility": "high (score 1 only)",
+        "max_score_measurable_by_webcam": "1",
+        "signals_to_measure": "wrist extension angle with elbow ~0",
+        "key_numeric_criteria": "15 deg",
+        "start_position": "shoulder ~30 flexion+abduction, elbow 0, forearm pronated",
+        "not_allowed_or_notes": "elbow contracture >= 30 deg -> not testable"
+      },
+      "22": {
+        "section": "B Wrist",
+        "item_name": "Repeated wrist extension/flexion, elbow 0",
+        "score_0": "No movement OR one direction only",
+        "score_1": "Not full range but both directions OR only one cycle",
+        "score_2": "At least two full-range cycles",
+        "webcam_feasibility": "high",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "as item 20 with elbow ~0",
+        "key_numeric_criteria": "2 full cycles",
+        "start_position": "shoulder ~30 flexion+abduction, elbow 0, forearm pronated",
+        "not_allowed_or_notes": "elbow or shoulder compensation"
+      },
+      "23": {
+        "section": "B Wrist",
+        "item_name": "Circumduction, elbow 90",
+        "score_0": "No circumduction",
+        "score_1": "Incomplete or jerky",
+        "score_2": "Full and smooth circumduction",
+        "webcam_feasibility": "medium",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "hand landmark 9 trajectory around wrist: circularity + smoothness (jerk)",
+        "key_numeric_criteria": "full + smooth; any direction",
+        "start_position": "shoulder neutral, elbow ~90, forearm pronated",
+        "not_allowed_or_notes": "excessive pronation/supination, elbow/shoulder compensation"
+      },
+      "24": {
+        "section": "C Hand",
+        "item_name": "Finger mass flexion",
+        "score_0": "No flexion in any finger",
+        "score_1": "Less than full fist OR not all fingers OR thumb inside fist",
+        "score_2": "Full flexion of all 5 fingers, fingertips touch palm, thumb outside fist",
+        "webcam_feasibility": "high",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "fingertip(8,12,16,20)-to-palm distance / palm size; thumb tip position outside fingers",
+        "key_numeric_criteria": "fingertips touch palm",
+        "start_position": "shoulder neutral, elbow ~90, fingers fully extended",
+        "not_allowed_or_notes": "must be active (no tenodesis/spastic recoil)"
+      },
+      "25": {
+        "section": "C Hand",
+        "item_name": "Finger mass extension",
+        "score_0": "No extension in any finger",
+        "score_1": "Partial OR not all fingers",
+        "score_2": "Full extension of all 5 fingers",
+        "webcam_feasibility": "high",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "MCP/PIP/DIP flexion angles all fingers; thumb extension",
+        "key_numeric_criteria": "all 5 fingers fully extended",
+        "start_position": "shoulder neutral, elbow ~90, fingers fully flexed (fist)",
+        "not_allowed_or_notes": "must be active (no tenodesis)"
+      },
+      "26": {
+        "section": "C Hand",
+        "item_name": "Hook grasp",
+        "score_0": "Cannot achieve hook position",
+        "score_1": "Achieves hook position, cannot hold against resistance",
+        "score_2": "Holds hook against moderate resistance",
+        "webcam_feasibility": "high (score 1 only)",
+        "max_score_measurable_by_webcam": "1",
+        "signals_to_measure": "MCP 2-5 ~0 deg while PIP and DIP flexed",
+        "key_numeric_criteria": "MCP 0 deg; PIP/DIP flexed",
+        "start_position": "shoulder neutral, elbow ~90",
+        "not_allowed_or_notes": "thumb/wrist/forearm not scored"
+      },
+      "27": {
+        "section": "C Hand",
+        "item_name": "Thumb adduction",
+        "score_0": "Cannot perform pure adduction with extended joints",
+        "score_1": "Pure adduction holding paper against gravity",
+        "score_2": "Holds paper against slight tug",
+        "webcam_feasibility": "medium (score 1 needs paper)",
+        "max_score_measurable_by_webcam": "1",
+        "signals_to_measure": "thumb tip(4) to index MCP(5) distance with all joints extended, thumb in hand plane",
+        "key_numeric_criteria": "thumb meets index MCP, joints 0 deg",
+        "start_position": "shoulder neutral, elbow ~90, forearm pronated",
+        "not_allowed_or_notes": "wrist/forearm not scored"
+      },
+      "28": {
+        "section": "C Hand",
+        "item_name": "Pincer grasp (opposition)",
+        "score_0": "Cannot open fingers to grasp / hold pencil between pads",
+        "score_1": "Grasps and holds pencil, not against tug",
+        "score_2": "Holds pencil against upward tug",
+        "webcam_feasibility": "medium (position only)",
+        "max_score_measurable_by_webcam": "1",
+        "signals_to_measure": "thumb tip(4)-index tip(8) distance; pads opposed; digits 3-5 not supporting",
+        "key_numeric_criteria": "pulp-to-pulp contact",
+        "start_position": "shoulder neutral, elbow ~90, hand ready to grasp",
+        "not_allowed_or_notes": "non-affected hand may not help"
+      },
+      "29": {
+        "section": "C Hand",
+        "item_name": "Cylinder grasp",
+        "score_0": "Cannot open fingers / grasp can",
+        "score_1": "Grasps can (palm contact, thumb opposed), not against tug",
+        "score_2": "Holds can against upward tug",
+        "webcam_feasibility": "low (needs object)",
+        "max_score_measurable_by_webcam": "1",
+        "signals_to_measure": "hand pre-shape opening then closure around ~5 cm can; object occludes landmarks",
+        "key_numeric_criteria": "can ~5 cm diameter, <=100 g",
+        "start_position": "as item 28",
+        "not_allowed_or_notes": "non-affected hand may not help"
+      },
+      "30": {
+        "section": "C Hand",
+        "item_name": "Spherical grasp",
+        "score_0": "Cannot open fingers / grasp ball",
+        "score_1": "Grasps ball (palm contact, thumb opposed), not against pull",
+        "score_2": "Holds ball against pull",
+        "webcam_feasibility": "low (needs object)",
+        "max_score_measurable_by_webcam": "1",
+        "signals_to_measure": "hand pre-shape opening + thumb opposition around tennis ball",
+        "key_numeric_criteria": "tennis ball",
+        "start_position": "as item 28",
+        "not_allowed_or_notes": "non-affected hand may not help"
+      },
+      "31": {
+        "section": "D Coordination/speed",
+        "item_name": "Tremor (finger-to-nose x5, eyes closed)",
+        "score_0": "Marked tremor OR cannot complete 5 reps",
+        "score_1": "Slight tremor that mildly interferes",
+        "score_2": "No tremor in all 5 reps",
+        "webcam_feasibility": "medium",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "index tip (hand 8) path deviation from straight line; high-frequency jitter",
+        "key_numeric_criteria": "5 reps",
+        "start_position": "sitting upright, hand on ipsilateral knee, eyes closed",
+        "not_allowed_or_notes": "head or trunk movement to compensate"
+      },
+      "32": {
+        "section": "D Coordination/speed",
+        "item_name": "Dysmetria",
+        "score_0": "Pronounced/unsystematic (e.g. cheek) OR cannot complete 5",
+        "score_1": "Slight but systematic, close to nose tip",
+        "score_2": "Index tip lands on nose tip all 5 reps (first rep may deviate slightly)",
+        "webcam_feasibility": "medium",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "index tip (hand 8) to nose (pose 0) distance at each touch, normalised by face size",
+        "key_numeric_criteria": "nose tip contact",
+        "start_position": "as item 31",
+        "not_allowed_or_notes": "as item 31"
+      },
+      "33": {
+        "section": "D Coordination/speed",
+        "item_name": "Time (affected vs non-affected)",
+        "score_0": "Affected >= 6 s slower OR cannot complete 5",
+        "score_1": "Affected 2.0-5.9 s slower",
+        "score_2": "Affected < 2 s slower (or faster)",
+        "webcam_feasibility": "high",
+        "max_score_measurable_by_webcam": "2",
+        "signals_to_measure": "time from hand leaving knee to hand back on knee after 5 reps, both arms, non-affected first",
+        "key_numeric_criteria": "<2 s -> 2; 2.0-5.9 s -> 1; >=6 s -> 0",
+        "start_position": "as item 31",
+        "not_allowed_or_notes": "not allowed: head/trunk compensation"
+      }
+    },
+    "note": "Webcam output is an 'FMA-style' score for coaching and progress logs; items needing resistance are capped at 1; reflex and hand-to-lumbar items are not measurable."
+  },
+  "layer2_normative_rom": {
+    "source": "SOUCIE2011",
+    "age_group": "45-69 (oldest available; Eleanor is 72)",
+    "measurement": "passive, goniometer",
+    "use": [
+      "upper ceiling only (never a target)",
+      "plausibility check: measured angle > group max + tolerance => probable tracking error"
+    ],
+    "active_shoulder_flexion_reference_deg": {
+      "value": 160,
+      "source": "GILL2020_via_FMA2026",
+      "note": "active flexion ~160 deg across age groups in non-disabled adults"
+    },
+    "motions": {
+      "hip_extension": {
+        "female": {
+          "mean_deg": 16.7,
+          "sd_deg": 7.0,
+          "ci95_low_deg": 15.5,
+          "ci95_high_deg": 17.9,
+          "min_deg": -10.0,
+          "p25_deg": 11.0,
+          "p50_deg": 16.0,
+          "p75_deg": 21.0,
+          "max_deg": 35.0,
+          "n": 123
+        },
+        "position": "side lying",
+        "male": {
+          "mean_deg": 13.5,
+          "sd_deg": 5.2,
+          "ci95_low_deg": 12.5,
+          "ci95_high_deg": 14.5,
+          "min_deg": 3.5,
+          "p25_deg": 10.0,
+          "p50_deg": 12.5,
+          "p75_deg": 17.5,
+          "max_deg": 29.0,
+          "n": 96
+        }
+      },
+      "hip_flexion": {
+        "female": {
+          "mean_deg": 130.8,
+          "sd_deg": 8.8,
+          "ci95_low_deg": 129.2,
+          "ci95_high_deg": 132.4,
+          "min_deg": 104.0,
+          "p25_deg": 124.5,
+          "p50_deg": 132.0,
+          "p75_deg": 136.0,
+          "max_deg": 154.5,
+          "n": 123
+        },
+        "position": "supine",
+        "male": {
+          "mean_deg": 127.2,
+          "sd_deg": 7.4,
+          "ci95_low_deg": 125.7,
+          "ci95_high_deg": 128.7,
+          "min_deg": 111.0,
+          "p25_deg": 122.3,
+          "p50_deg": 128.0,
+          "p75_deg": 132.3,
+          "max_deg": 143.0,
+          "n": 96
+        }
+      },
+      "knee_flexion": {
+        "female": {
+          "mean_deg": 137.8,
+          "sd_deg": 7.4,
+          "ci95_low_deg": 136.5,
+          "ci95_high_deg": 139.1,
+          "min_deg": 114.5,
+          "p25_deg": 134.0,
+          "p50_deg": 137.5,
+          "p75_deg": 142.5,
+          "max_deg": 160.0,
+          "n": 123
+        },
+        "position": "supine",
+        "male": {
+          "mean_deg": 132.9,
+          "sd_deg": 6.3,
+          "ci95_low_deg": 131.6,
+          "ci95_high_deg": 134.2,
+          "min_deg": 120.0,
+          "p25_deg": 128.5,
+          "p50_deg": 132.5,
+          "p75_deg": 137.5,
+          "max_deg": 150.0,
+          "n": 96
+        }
+      },
+      "knee_extension": {
+        "female": {
+          "mean_deg": 1.2,
+          "sd_deg": 2.9,
+          "ci95_low_deg": 0.7,
+          "ci95_high_deg": 1.7,
+          "min_deg": -7.0,
+          "p25_deg": 0.0,
+          "p50_deg": 0.0,
+          "p75_deg": 2.5,
+          "max_deg": 10.0,
+          "n": 123
+        },
+        "position": "supine",
+        "male": {
+          "mean_deg": 0.5,
+          "sd_deg": 1.9,
+          "ci95_low_deg": 0.1,
+          "ci95_high_deg": 0.9,
+          "min_deg": -4.0,
+          "p25_deg": 0.0,
+          "p50_deg": 0.0,
+          "p75_deg": 0.5,
+          "max_deg": 8.0,
+          "n": 96
+        }
+      },
+      "ankle_dorsiflexion": {
+        "female": {
+          "mean_deg": 11.6,
+          "sd_deg": 5.5,
+          "ci95_low_deg": 10.6,
+          "ci95_high_deg": 12.6,
+          "min_deg": -4.0,
+          "p25_deg": 8.0,
+          "p50_deg": 11.5,
+          "p75_deg": 14.5,
+          "max_deg": 25.5,
+          "n": 123
+        },
+        "position": "seated",
+        "male": {
+          "mean_deg": 11.9,
+          "sd_deg": 5.0,
+          "ci95_low_deg": 10.9,
+          "ci95_high_deg": 12.9,
+          "min_deg": 0.0,
+          "p25_deg": 8.5,
+          "p50_deg": 12.0,
+          "p75_deg": 15.0,
+          "max_deg": 23.5,
+          "n": 96
+        }
+      },
+      "ankle_plantar_flexion": {
+        "female": {
+          "mean_deg": 56.5,
+          "sd_deg": 8.7,
+          "ci95_low_deg": 55.0,
+          "ci95_high_deg": 58.0,
+          "min_deg": 37.5,
+          "p25_deg": 50.5,
+          "p50_deg": 55.0,
+          "p75_deg": 62.5,
+          "max_deg": 78.0,
+          "n": 123
+        },
+        "position": "seated",
+        "male": {
+          "mean_deg": 49.4,
+          "sd_deg": 8.4,
+          "ci95_low_deg": 47.7,
+          "ci95_high_deg": 51.1,
+          "min_deg": 30.0,
+          "p25_deg": 43.0,
+          "p50_deg": 49.5,
+          "p75_deg": 54.3,
+          "max_deg": 76.0,
+          "n": 96
+        }
+      },
+      "shoulder_flexion": {
+        "female": {
+          "mean_deg": 168.1,
+          "sd_deg": 8.2,
+          "ci95_low_deg": 166.7,
+          "ci95_high_deg": 169.5,
+          "min_deg": 147.0,
+          "p25_deg": 163.5,
+          "p50_deg": 168.5,
+          "p75_deg": 173.5,
+          "max_deg": 188.0,
+          "n": 123
+        },
+        "position": "supine",
+        "male": {
+          "mean_deg": 164.0,
+          "sd_deg": 8.3,
+          "ci95_low_deg": 162.3,
+          "ci95_high_deg": 165.7,
+          "min_deg": 130.5,
+          "p25_deg": 159.0,
+          "p50_deg": 164.0,
+          "p75_deg": 169.0,
+          "max_deg": 185.5,
+          "n": 96
+        }
+      },
+      "elbow_flexion": {
+        "female": {
+          "mean_deg": 148.3,
+          "sd_deg": 5.6,
+          "ci95_low_deg": 147.3,
+          "ci95_high_deg": 149.3,
+          "min_deg": 135.0,
+          "p25_deg": 145.0,
+          "p50_deg": 149.0,
+          "p75_deg": 151.5,
+          "max_deg": 164.0,
+          "n": 123
+        },
+        "position": "supine",
+        "male": {
+          "mean_deg": 143.5,
+          "sd_deg": 6.0,
+          "ci95_low_deg": 142.3,
+          "ci95_high_deg": 144.7,
+          "min_deg": 122.5,
+          "p25_deg": 139.8,
+          "p50_deg": 143.5,
+          "p75_deg": 147.0,
+          "max_deg": 157.5,
+          "n": 96
+        }
+      },
+      "elbow_extension": {
+        "female": {
+          "mean_deg": 3.6,
+          "sd_deg": 5.5,
+          "ci95_low_deg": 2.6,
+          "ci95_high_deg": 4.6,
+          "min_deg": -9.5,
+          "p25_deg": 0.0,
+          "p50_deg": 3.0,
+          "p75_deg": 7.0,
+          "max_deg": 20.0,
+          "n": 123
+        },
+        "position": "supine",
+        "male": {
+          "mean_deg": -0.7,
+          "sd_deg": 3.9,
+          "ci95_low_deg": -1.5,
+          "ci95_high_deg": 0.1,
+          "min_deg": -12.0,
+          "p25_deg": -3.0,
+          "p50_deg": 0.0,
+          "p75_deg": 0.0,
+          "max_deg": 14.0,
+          "n": 96
+        }
+      },
+      "elbow_pronation": {
+        "female": {
+          "mean_deg": 80.8,
+          "sd_deg": 6.3,
+          "ci95_low_deg": 79.7,
+          "ci95_high_deg": 81.9,
+          "min_deg": 56.5,
+          "p25_deg": 78.0,
+          "p50_deg": 81.0,
+          "p75_deg": 85.0,
+          "max_deg": 99.0,
+          "n": 123
+        },
+        "position": "seated",
+        "male": {
+          "mean_deg": 77.7,
+          "sd_deg": 6.0,
+          "ci95_low_deg": 76.5,
+          "ci95_high_deg": 78.9,
+          "min_deg": 45.0,
+          "p25_deg": 74.5,
+          "p50_deg": 79.0,
+          "p75_deg": 81.5,
+          "max_deg": 88.0,
+          "n": 96
+        }
+      },
+      "elbow_supination": {
+        "female": {
+          "mean_deg": 87.2,
+          "sd_deg": 6.9,
+          "ci95_low_deg": 86.0,
+          "ci95_high_deg": 88.4,
+          "min_deg": 73.0,
+          "p25_deg": 82.5,
+          "p50_deg": 86.5,
+          "p75_deg": 89.5,
+          "max_deg": 109.0,
+          "n": 123
+        },
+        "position": "seated",
+        "male": {
+          "mean_deg": 82.4,
+          "sd_deg": 7.5,
+          "ci95_low_deg": 80.9,
+          "ci95_high_deg": 83.9,
+          "min_deg": 38.0,
+          "p25_deg": 80.0,
+          "p50_deg": 83.0,
+          "p75_deg": 86.3,
+          "max_deg": 101.5,
+          "n": 96
+        }
+      }
+    }
+  },
+  "layer2_functional_rom": {
+    "upper_limb_milestones": {
+      "shoulder_elevation": [
+        {
+          "deg": 71.0,
+          "ci95": [
+            67.0,
+            75.0
+          ],
+          "task": "Drinking from a cup",
+          "source": "GATES2016"
+        },
+        {
+          "deg": 86.0,
+          "ci95": [
+            78.0,
+            95.0
+          ],
+          "task": "Can off shelf (fixed height 1.48 m)",
+          "source": "GATES2016"
+        },
+        {
+          "deg": 105.0,
+          "ci95": [
+            102.0,
+            108.0
+          ],
+          "task": "Can off shelf (head height)",
+          "source": "GATES2016"
+        },
+        {
+          "deg": 108.0,
+          "ci95": [
+            104.0,
+            111.0
+          ],
+          "task": "Box off shelf (head height)",
+          "source": "GATES2016"
+        }
+      ],
+      "elbow_flexion": [
+        {
+          "deg": 81.0,
+          "ci95": [
+            75.0,
+            87.0
+          ],
+          "task": "Box off ground",
+          "source": "GATES2016"
+        },
+        {
+          "deg": 100.0,
+          "ci95": [
+            92.0,
+            107.0
+          ],
+          "task": "Can off shelf (fixed height 1.48 m)",
+          "source": "GATES2016"
+        },
+        {
+          "deg": 121.0,
+          "ci95": [
+            115.0,
+            126.0
+          ],
+          "task": "Drinking from a cup",
+          "source": "GATES2016"
+        }
+      ],
+      "wrist_extension": [
+        {
+          "deg": 33,
+          "ci95": [
+            26,
+            40
+          ],
+          "task": "Drinking from a cup",
+          "source": "GATES2016",
+          "note": "reported as -33 (extension negative); stored positive = extension"
+        },
+        {
+          "deg": 40,
+          "task": "all 8 ADLs",
+          "source": "GATES2016"
+        }
+      ],
+      "wrist_flexion": [
+        {
+          "deg": 38,
+          "task": "all 8 ADLs",
+          "source": "GATES2016"
+        }
+      ],
+      "forearm_supination": [
+        {
+          "deg": 22,
+          "ci95": [
+            13,
+            31
+          ],
+          "task": "Drinking from a cup",
+          "source": "GATES2016",
+          "note": "reported negative"
+        },
+        {
+          "deg": 53,
+          "task": "all 8 ADLs",
+          "source": "GATES2016"
+        }
+      ],
+      "elbow_flexion_all_tasks_minimum_used_deg": {
+        "value": 81,
+        "source": "GATES2016",
+        "note": "every task needed >= 81 deg"
+      },
+      "all_tasks_minimum_rom": {
+        "humeral plane of elevation (horizontal abd-add)": {
+          "neg": -65.0,
+          "pos": 105.0,
+          "notes": ""
+        },
+        "humeral elevation": {
+          "neg": 0.0,
+          "pos": 108.0,
+          "notes": ""
+        },
+        "humeral rotation (neg = external, pos = internal)": {
+          "neg": -55.0,
+          "pos": 79.0,
+          "notes": ""
+        },
+        "elbow flexion": {
+          "neg": 0.0,
+          "pos": 121.0,
+          "notes": "all tasks required >= 81 deg elbow flexion"
+        },
+        "forearm rotation (neg = supination, pos = pronation)": {
+          "neg": -53.0,
+          "pos": 13.0,
+          "notes": ""
+        },
+        "wrist flexion-extension (neg = extension)": {
+          "neg": -40.0,
+          "pos": 38.0,
+          "notes": ""
+        },
+        "wrist radial-ulnar deviation (neg = radial)": {
+          "neg": -28.0,
+          "pos": 38.0,
+          "notes": ""
+        },
+        "trunk lateral lean (ROM)": {
+          "neg": null,
+          "pos": 23.0,
+          "notes": "majority of tasks required little to no trunk or pelvis motion (<10 deg)"
+        },
+        "trunk axial rotation (ROM)": {
+          "neg": null,
+          "pos": 32.0,
+          "notes": ""
+        },
+        "trunk flexion-extension (ROM)": {
+          "neg": null,
+          "pos": 59.0,
+          "notes": "box off ground; 50 deg for donning pants"
+        }
+      }
+    },
+    "finger_functional_rom": {
+      "source": "BAIN2015",
+      "open_hand_pre_grasp_targets_deg": {
+        "MCP_max_flexion": 19.0,
+        "PIP_max_flexion": 23.0,
+        "DIP_max_flexion": 10.0,
+        "meaning": "hand must open to at least this (flexion <= value) to pre-shape for 90% of Sollerman ADL tasks"
+      },
+      "closed_hand_grasp_targets_deg": {
+        "MCP_min_flexion": 71.0,
+        "PIP_min_flexion": 87.0,
+        "DIP_min_flexion": 64.0,
+        "meaning": "fingers must flex to at least this to grasp in 90% of tasks"
+      },
+      "active_rom_healthy_deg": {
+        "MCP": [
+          -19.0,
+          90.0
+        ],
+        "PIP": [
+          -7.0,
+          101.0
+        ],
+        "DIP": [
+          -6.0,
+          84.0
+        ],
+        "note": "negative = hyperextension"
+      },
+      "per_finger_functional_arc_deg": {
+        "MCP.index": 40.0,
+        "MCP.middle": 50.0,
+        "MCP.ring": 53.0,
+        "MCP.little": 65.0,
+        "PIP.index": 64.0,
+        "PIP.middle": 59.0,
+        "PIP.ring": 63.0,
+        "PIP.little": 71.0,
+        "DIP.index": 57.0,
+        "DIP.middle": 54.0,
+        "DIP.ring": 45.0,
+        "DIP.little": 59.0
+      }
+    }
+  },
+  "layer2_compensation": {
+    "general": {
+      "rule": "Compensatory movements with other body parts (e.g., trunk) are not allowed when scoring",
+      "source": "FMA2026"
+    },
+    "trunk_flexion_or_lean": {
+      "threshold_change_deg": 10,
+      "source": [
+        "GATES2016"
+      ],
+      "derived": true,
+      "applies_to": [
+        "shoulder_flexion",
+        "shoulder_abduction",
+        "hand_to_mouth",
+        "hand_to_head",
+        "wrist",
+        "finger_to_nose"
+      ],
+      "cue": "Keep your back against the chair."
+    },
+    "shoulder_girdle_elevation": {
+      "threshold_ratio": 0.15,
+      "proposed": true,
+      "source_rule": "FMA2026 item 15 / LEVIN2004 'excessive scapular elevation'",
+      "cue": "Let your shoulder relax down."
+    },
+    "elbow_bends_during_straight_arm_items": {
+      "threshold_deg_above_start": "tolerance(elbow)",
+      "source": "FMA2026 items 13, 15, 16",
+      "cue": "Keep your elbow straight."
+    },
+    "arm_leaves_movement_plane": {
+      "threshold_ratio": 0.87,
+      "proposed": true,
+      "source_rule": "FMA2026 13/16 'without abduction', 15 'forearm position maintained'",
+      "cue_flexion": "Lift straight in front of you.",
+      "cue_abduction": "Lift out to the side."
+    },
+    "reach_trunk_share": {
+      "source": "LEVIN2004",
+      "close_target": {
+        "score3_max_share": 0.1,
+        "score3_note": "'no or almost no' trunk displacement; 0.10 proposed",
+        "score1_min_share": 0.5,
+        "score0_share": 1.0
+      },
+      "far_target": {
+        "appropriate_share": 0.25,
+        "appropriate_tolerance": 0.1,
+        "score1_share": 0.5,
+        "score0_share": 0.75,
+        "tolerance_proposed": true
+      },
+      "required_joint_motion_deg": {
+        "shoulder_flexion": {
+          "close": 20,
+          "far": 40
+        },
+        "shoulder_horizontal_adduction": {
+          "close": 40,
+          "far": 40
+        },
+        "elbow_extension_excursion": {
+          "close": 80,
+          "far": 100
+        }
+      }
+    }
+  },
+  "layer3_personal_baseline": {
+    "calibration_protocol": [
+      {
+        "step": "setup check",
+        "detail": "camera 1.5 m from chair, lens ~90 cm high, perpendicular to the movement plane; sleeveless/light clothing; even lighting",
+        "source": [
+          "LAZEM2026",
+          "JAYAVEL2025"
+        ]
+      },
+      {
+        "step": "seat",
+        "detail": "chair without armrests is FMA standard; an armchair may be used for safety if logged",
+        "source": "FMA2026"
+      },
+      {
+        "step": "demo + practice",
+        "detail": "demonstrate, then 2 practice trials",
+        "source": [
+          "FMA2026",
+          "LAZEM2026",
+          "LEVIN2004"
+        ]
+      },
+      {
+        "step": "unaffected side first",
+        "detail": "3 recorded reps right side, then 3 left side",
+        "source": [
+          "FMA2026",
+          "SOUCIE2011"
+        ]
+      },
+      {
+        "step": "rest",
+        "detail": "~10 s between reps, ~1 min between tasks",
+        "source": "LAZEM2026"
+      },
+      {
+        "step": "store",
+        "detail": "best of 3 (FMA best performance) and mean of 3 (for change detection) per metric and side",
+        "source": "FMA2026"
+      },
+      {
+        "step": "therapist limits",
+        "detail": "optional passive ROM / contracture entries cap targets; elbow deficit < 30 deg = max available; >= 30 deg = item not testable",
+        "source": "FMA2026"
+      }
+    ],
+    "reference_values": {
+      "unaffected_max": "best of 3, right side",
+      "affected_baseline": "best of 3, left side, session 0",
+      "symmetry_index": "affected / unaffected (Soucie: healthy left-right differences < 1 deg)"
+    },
+    "target_ladder": {
+      "formula": "target_k = min(ceiling, affected_baseline + k * step); ceiling = min(unaffected_max, therapist_passive_limit, normative_ceiling)",
+      "step_deg": {
+        "value": "tolerance_deg of that joint/task",
+        "proposed": true,
+        "why": "a step smaller than measurement tolerance cannot be detected reliably"
+      },
+      "named_milestones": "insert FMA thresholds (e.g., 90 deg) and GATES2016/BAIN2015 task values that lie between baseline and ceiling; announce when crossed"
+    },
+    "progression_rules": {
+      "proposed": true,
+      "origin": "project Think-module defaults (Eleanor Extended Program doc), not from the reviewed papers",
+      "rules": [
+        {
+          "if": "clean success >= 80% in 2 sessions in a row, pain not higher, compensation not rising",
+          "then": "level +1"
+        },
+        {
+          "if": "success 50-79%",
+          "then": "stay"
+        },
+        {
+          "if": "success < 50% OR compensation in most reps",
+          "then": "level -1"
+        },
+        {
+          "if": "pain +2 or new shoulder pain",
+          "then": "pause exercise; flag therapist"
+        },
+        {
+          "if": "2 missed sessions",
+          "then": "restart one level lower"
+        }
+      ]
+    }
+  },
+  "scoring": {
+    "modes": {
+      "assessment": "1-3 attempts per item, best attempt counts, weekly (frequency proposed)",
+      "training": "sets of reps with coaching feedback",
+      "source": "FMA2026"
+    },
+    "rep_fma_style_score": [
+      "0: movement from start < tolerance, OR start position cannot be obtained where the item requires it",
+      "1: moved, but peak < FMA threshold, OR |peak - threshold| <= tolerance (uncertain => lower score, FMA2026), OR form rule broken before threshold, OR any compensation flag",
+      "2: peak > threshold + tolerance (outside the uncertainty band), all form rules held, no compensation"
+    ],
+    "rep_coaching_success": "peak >= personal_target - tolerance AND form rules held; compensation => success_with_cue (counts, but logged and slows progression)",
+    "progress_claim_rule": "say 'you improved' only if session value (best of 3) minus reference >= MDC for that task/joint; otherwise praise effort/consistency",
+    "feedback_map": {
+      "2": "specific praise naming the gain or the life goal",
+      "1": "one cue about the failed form rule, or 'a little higher'",
+      "0": "encouragement + replay demo",
+      "tracking_lost": "blame the system: 'I can't see your arm, move into the box'"
+    },
+    "elbow_start_allowance": "start elbow flexion must be <= max(tolerance(elbow), therapist contracture deficit < 30 deg) (FMA2026: full extension of available passive range at start)",
+    "max_technique_cues_per_set": {
+      "value": 1,
+      "proposed": true,
+      "origin": "project design rule"
+    }
+  },
+  "exercises": {
+    "shoulder_flexion_raise": {
+      "name": "Arm raise to the front (FMA 13 then 16)",
+      "fma_items": [
+        "13",
+        "16"
+      ],
+      "side_tested": "affected (left)",
+      "camera_view": "sagittal (chair side-on, affected arm nearest camera)",
+      "primary_metric": "shoulder_elevation",
+      "direction": "increase",
+      "start_posture": [
+        {
+          "metric": "shoulder_elevation",
+          "op": "<=",
+          "value": 20,
+          "proposed": true
+        },
+        {
+          "metric": "elbow_flexion",
+          "op": "<=",
+          "value": "elbow_start_allowance"
+        }
+      ],
+      "form_rules": [
+        {
+          "id": "elbow_straight",
+          "metric": "elbow_flexion",
+          "op": "<=",
+          "value": "start + tolerance(elbow)",
+          "source": "FMA2026",
+          "cue": "Keep your elbow straight."
+        },
+        {
+          "id": "in_plane",
+          "metric": "upper_arm_in_plane_ratio",
+          "op": ">=",
+          "value": 0.87,
+          "proposed": true,
+          "cue": "Lift straight in front of you."
+        }
+      ],
+      "compensation_rules": [
+        "trunk_flexion_or_lean"
+      ],
+      "fma_thresholds_deg": {
+        "13": 90,
+        "16": "unaffected-side max (reference ~160)"
+      },
+      "milestones": "functional.upper_limb_milestones.shoulder_elevation",
+      "ceiling": "min(unaffected_side_max, normative active 160)",
+      "tolerance_deg": 5.5,
+      "mdc_deg": 13.19,
+      "elbow_tolerance_deg": 9.0,
+      "life_goal_link": "Reaching a shelf or cupboard."
+    },
+    "shoulder_abduction_raise": {
+      "name": "Arm raise to the side (FMA 15; FMA 05 in synergy)",
+      "fma_items": [
+        "15",
+        "05"
+      ],
+      "camera_view": "frontal",
+      "primary_metric": "shoulder_elevation",
+      "direction": "increase",
+      "start_posture": [
+        {
+          "metric": "shoulder_elevation",
+          "op": "<=",
+          "value": 20,
+          "proposed": true
+        },
+        {
+          "metric": "elbow_flexion",
+          "op": "<=",
+          "value": "elbow_start_allowance"
+        }
+      ],
+      "form_rules": [
+        {
+          "id": "elbow_straight",
+          "metric": "elbow_flexion",
+          "op": "<=",
+          "value": "start + tolerance(elbow)",
+          "source": "FMA2026",
+          "cue": "Keep your elbow straight."
+        },
+        {
+          "id": "in_plane",
+          "metric": "upper_arm_in_plane_ratio",
+          "op": ">=",
+          "value": 0.87,
+          "proposed": true,
+          "cue": "Lift out to the side."
+        },
+        {
+          "id": "no_shoulder_hike",
+          "metric": "shoulder_girdle_elevation",
+          "op": "<=",
+          "value": 0.15,
+          "proposed": true,
+          "source_rule": "FMA2026",
+          "cue": "Let your shoulder relax down."
+        }
+      ],
+      "compensation_rules": [
+        "trunk_flexion_or_lean"
+      ],
+      "fma_thresholds_deg": {
+        "15": 90,
+        "05": 90
+      },
+      "ceiling": "unaffected_side_max",
+      "tolerance_deg": 6.5,
+      "mdc_deg": 11.41,
+      "elbow_tolerance_deg": 9.0,
+      "life_goal_link": "Putting on a cardigan."
+    },
+    "hand_to_mouth": {
+      "name": "Cup to mouth (Gates drinking task; Lazem task 4)",
+      "fma_items": [
+        "07 (partial)"
+      ],
+      "camera_view": "sagittal",
+      "primary_metric": "elbow_flexion",
+      "direction": "increase",
+      "secondary_metrics": [
+        "shoulder_elevation"
+      ],
+      "compensation_rules": [
+        "trunk_flexion_or_lean"
+      ],
+      "targets_deg": {
+        "elbow_flexion": {
+          "value": 121,
+          "ci95": [
+            115,
+            126
+          ],
+          "source": "GATES2016"
+        },
+        "shoulder_elevation": {
+          "value": 71,
+          "ci95": [
+            67,
+            75
+          ],
+          "source": "GATES2016"
+        }
+      },
+      "tolerance_deg": 5.5,
+      "mdc_deg": 20.55,
+      "shoulder_tolerance_deg": 5.0,
+      "shoulder_mdc_deg": 11.65,
+      "safety": "Empty cup only until swallowing advice allows food/drink to mouth.",
+      "life_goal_link": "Drinking your tea."
+    },
+    "hand_to_head": {
+      "name": "Hand to head / ear (FMA 07 hand touching ear; Lazem task 3)",
+      "fma_items": [
+        "07"
+      ],
+      "camera_view": "sagittal",
+      "primary_metric": "elbow_flexion",
+      "direction": "increase",
+      "secondary_metrics": [
+        "shoulder_elevation"
+      ],
+      "end_condition": {
+        "metric": "wrist_to_ear_distance_norm",
+        "op": "<=",
+        "value": 0.5,
+        "proposed": true,
+        "note": "normalised by shoulder width"
+      },
+      "ceiling": "unaffected_side_max",
+      "tolerance_deg": 5.0,
+      "mdc_deg": 32.65,
+      "shoulder_tolerance_deg": 5.0,
+      "shoulder_mdc_deg": 18.19,
+      "compensation_rules": [
+        "trunk_flexion_or_lean"
+      ],
+      "life_goal_link": "Brushing your hair."
+    },
+    "elbow_extension": {
+      "name": "Straighten the elbow (FMA 10)",
+      "fma_items": [
+        "10"
+      ],
+      "camera_view": "sagittal",
+      "primary_metric": "elbow_flexion",
+      "direction": "decrease",
+      "fma_thresholds_deg": {
+        "10": 0
+      },
+      "contracture_rule": "FMA2026: deficit up to 30 deg from contracture = max available; >= 30 deg = not testable",
+      "tolerance_deg": 5.0,
+      "mdc_deg": 20.55,
+      "compensation_rules": [
+        "trunk_flexion_or_lean"
+      ],
+      "life_goal_link": "Reaching across the table."
+    },
+    "wrist_extension": {
+      "name": "Wrist up (FMA 19/21 then 20/22)",
+      "fma_items": [
+        "19",
+        "21",
+        "20",
+        "22"
+      ],
+      "camera_view": "side view of forearm, elbow ~90 deg (19/20) or ~0 deg (21/22)",
+      "primary_metric": "wrist_extension",
+      "direction": "increase",
+      "fma_thresholds_deg": {
+        "19": 15,
+        "21": 15
+      },
+      "fma_cycles": {
+        "20": 2,
+        "22": 2
+      },
+      "fma_max_score_webcam": {
+        "19": 1,
+        "21": 1,
+        "20": 2,
+        "22": 2
+      },
+      "milestones_deg": [
+        {
+          "deg": 15,
+          "source": "FMA2026"
+        },
+        {
+          "deg": 33,
+          "task": "Drinking from a cup",
+          "source": "GATES2016"
+        },
+        {
+          "deg": 40,
+          "task": "all 8 ADLs",
+          "source": "GATES2016"
+        }
+      ],
+      "form_rules": [
+        {
+          "id": "elbow_steady",
+          "metric": "elbow_flexion",
+          "op": "abs_change<=",
+          "value": "tolerance(elbow)",
+          "source": "FMA2026 (no elbow/shoulder compensation)",
+          "cue": "Keep your elbow still."
+        }
+      ],
+      "tolerance_deg": 5.0,
+      "mdc_deg": null,
+      "provisional_change_threshold_deg": 10.0,
+      "life_goal_link": "Holding a watering can steady."
+    },
+    "hand_open_close": {
+      "name": "Bloom: open and close the hand (FMA 25 then 24)",
+      "fma_items": [
+        "25",
+        "24"
+      ],
+      "camera_view": "palm facing camera, elbow ~90 deg",
+      "primary_metric": "finger_flexion (MCP, PIP, DIP of digits 2-5)",
+      "open_phase": {
+        "fma25_full_extension_max_flexion_deg": "tolerance(finger)",
+        "functional_open_max_flexion_deg": {
+          "MCP": 19,
+          "PIP": 23,
+          "DIP": 10,
+          "source": "BAIN2015"
+        }
+      },
+      "close_phase": {
+        "fma24_fingertip_to_palm_max": 0.35,
+        "fma24_threshold_proposed": true,
+        "thumb_outside_fist": true,
+        "functional_close_min_flexion_deg": {
+          "MCP": 71,
+          "PIP": 87,
+          "DIP": 64,
+          "source": "BAIN2015"
+        }
+      },
+      "all_fingers_rule": "FMA2026: score 2 needs all 5 fingers; any finger short => 1",
+      "normalised_metric": "hand_aperture as % of right-hand calibrated range",
+      "tolerance_deg": 10.0,
+      "provisional_change_threshold_deg": 20.0,
+      "life_goal_link": "Opening your hand to hold the watering can."
+    },
+    "pinch": {
+      "name": "Bubble pinch (FMA 28 position)",
+      "fma_items": [
+        "28"
+      ],
+      "fma_max_score_webcam": 1,
+      "primary_metric": "pinch_gap",
+      "direction": "decrease",
+      "contact_threshold": {
+        "value": 0.12,
+        "proposed": true
+      },
+      "rule": "digits 3-5 must not support the pinch (their tips stay away from thumb tip)",
+      "source": "FMA2026",
+      "life_goal_link": "Doing up a button."
+    },
+    "tabletop_reach": {
+      "name": "Light the lamps: reach to near and far targets (RPS)",
+      "fma_items": [],
+      "camera_view": "45 deg between frontal and sagittal on affected side",
+      "source": "LEVIN2004",
+      "targets_cm_from_table_edge": {
+        "close": 1,
+        "far": 30
+      },
+      "setup": "seat 42 cm, backrest, no armrests; table 72 cm; chair at arm's length (wrist crease at 4 cm mark); feet flat; not leaning on backrest",
+      "metrics": [
+        "trunk_share_of_reach",
+        "elbow_flexion",
+        "shoulder_elevation"
+      ],
+      "scoring": "compensation.reach_trunk_share",
+      "life_goal_link": "Reaching for the salt on the table."
+    },
+    "finger_to_nose_timed": {
+      "name": "Finger to nose x5, both arms timed (FMA 31-33)",
+      "fma_items": [
+        "31",
+        "32",
+        "33"
+      ],
+      "camera_view": "frontal",
+      "reps": 5,
+      "order": "non-affected arm first",
+      "time_scoring_s": {
+        "2": "diff < 2.0",
+        "1": "2.0 <= diff <= 5.9",
+        "0": "diff >= 6.0 or < 5 reps"
+      },
+      "source": "FMA2026",
+      "adaptation": "Eyes open for Eleanor (MCI, fall risk) => results NOT comparable to clinical FMA 31-33; log as 'adapted'.",
+      "adaptation_proposed": true,
+      "dysmetria_thresholds": {
+        "on_nose_max": 0.35,
+        "slight_max": 0.8,
+        "proposed": true,
+        "unit": "nose_touch_error"
+      },
+      "timing": "start when wrist leaves knee zone; stop when wrist returns to knee zone after 5th touch"
+    }
+  }
+}
