@@ -91,9 +91,13 @@ class HandFeatures:
     openness: dict = field(default_factory=dict)        # finger -> 0..1, 1 = straight (uncalibrated)
     spread: dict = field(default_factory=dict)          # "index_middle" ... -> deg
     thumb_tip_dist: dict = field(default_factory=dict)  # finger -> thumb tip distance / palm size
+    # the same in the picture (pixels / palm size in pixels): no depth noise
+    thumb_tip_dist_image: dict = field(default_factory=dict)
+    tip_reach: dict = field(default_factory=dict)       # finger -> |tip - wrist| / |PIP - wrist|
     tip_height: dict = field(default_factory=dict)      # finger -> tip distance from palm plane / palm size
     thumb_flexion: float = 0.0        # thumb MCP + IP flexion (deg)
     thumb_to_pinky_mcp: float = 0.0   # / palm size
+    thumb_to_index_mcp: float = 0.0   # / palm size
     # benchmark measures (benchmarks/BENCHMARK_PLAN.md 3.3)
     aperture: float = 0.0             # mean fingertip -> wrist distance / palm size
     tip_to_palm: dict = field(default_factory=dict)     # finger -> tip to palm centre / palm size
@@ -213,23 +217,43 @@ def choose_other(observations, chosen):
     return max(others, key=lambda o: o.handedness_score) if others else None
 
 
-# Finger counting (answers 1-5 without a keyboard). A finger counts as
-# raised when it is nearly straight; the thumb also has to stand away from
-# the palm (a straight thumb lying along the index finger does not count).
-RAISED_OPENNESS = 0.75
-RAISED_THUMB_OPENNESS = 0.7
+# Finger counting (answers 1-5 without a keyboard). A long finger counts as
+# raised when its tip is clearly farther from the wrist than its middle
+# joint (tip_reach: about 1.35 straight, 1.0 half bent, 0.6 in a fist) and it
+# is not bent far at the knuckles. This does not depend on the small
+# flexion angles of a straight finger, which are noisy when the fingers
+# point up at the camera (the old openness rule counted mostly the index).
+# The thumb also has to stand away from the palm and from the index finger
+# (a straight thumb lying along the index finger does not count).
+RAISED_REACH = 1.15
+RAISED_MAX_BEND_DEG = 90.0        # MCP + PIP flexion
+RAISED_THUMB_OPENNESS = 0.6
 RAISED_THUMB_DIST = 0.9           # thumb tip -> little finger MCP, in palm sizes
+RAISED_THUMB_INDEX_DIST = 0.6     # thumb tip -> index finger MCP, in palm sizes
+
+
+def finger_raised(f, name):
+    """True when this long finger is held up (finger counting)."""
+    reach = f.tip_reach.get(name)
+    if reach is None:
+        return f.openness.get(name, 0.0) > 0.75
+    bend = f.joint_flexion.get(name)
+    bend = float(bend[0] + bend[1]) if bend is not None else 0.0
+    return reach > RAISED_REACH and bend < RAISED_MAX_BEND_DEG
+
+
+def thumb_raised(f):
+    return (f.openness.get("thumb", 0.0) > RAISED_THUMB_OPENNESS
+            and f.thumb_to_pinky_mcp > RAISED_THUMB_DIST
+            and f.thumb_to_index_mcp > RAISED_THUMB_INDEX_DIST)
 
 
 def count_extended(f):
     """Number of raised fingers (0-5) of one hand, or 0 when it is not seen."""
     if f is None or not f.present or not f.openness:
         return 0
-    n = sum(1 for name in FINGERS if f.openness.get(name, 0.0) > RAISED_OPENNESS)
-    if (f.openness.get("thumb", 0.0) > RAISED_THUMB_OPENNESS
-            and f.thumb_to_pinky_mcp > RAISED_THUMB_DIST):
-        n += 1
-    return n
+    n = sum(1 for name in FINGERS if finger_raised(f, name))
+    return n + (1 if thumb_raised(f) else 0)
 
 
 def extract(obs, t, image_size, affected_hand=config.AFFECTED_HAND):
@@ -305,6 +329,15 @@ def extract(obs, t, image_size, affected_hand=config.AFFECTED_HAND):
     for name in FINGERS:
         f.thumb_tip_dist[name] = float(np.linalg.norm(w[TIPS["thumb"]] - w[TIPS[name]]) / scale)
     f.thumb_to_pinky_mcp = float(np.linalg.norm(w[TIPS["thumb"]] - w[17]) / scale)
+    f.thumb_to_index_mcp = float(np.linalg.norm(w[TIPS["thumb"]] - w[5]) / scale)
+    palm_px = float(np.linalg.norm(img3[9, :2] - img3[WRIST, :2]))
+    palm_px = palm_px if palm_px > 1e-6 else 1.0
+    for name in FINGERS:
+        f.thumb_tip_dist_image[name] = float(
+            np.linalg.norm(img3[TIPS["thumb"], :2] - img3[TIPS[name], :2]) / palm_px)
+    for name, (mcp, pip, dip, tip) in FINGER_LANDMARKS.items():
+        pip_d = float(np.linalg.norm(w[pip] - w[WRIST]))
+        f.tip_reach[name] = float(np.linalg.norm(w[tip] - w[WRIST]) / pip_d) if pip_d > 1e-9 else 0.0
 
     # hand aperture and fingertips to the palm centre (FMA items 24 and 25)
     f.aperture = float(np.mean([np.linalg.norm(w[t] - w[WRIST]) for t in TIPS.values()]) / scale)
@@ -324,9 +357,9 @@ def extract(obs, t, image_size, affected_hand=config.AFFECTED_HAND):
 # ---------------------------------------------------------------------------
 
 _SCALARS = ("palm_facing", "palm_size", "palm_width", "thumb_flexion",
-            "thumb_to_pinky_mcp", "palm_size_image", "aperture")
-_DICTS = ("curl", "openness", "spread", "thumb_tip_dist", "tip_height", "joint_flexion",
-          "tip_to_palm")
+            "thumb_to_pinky_mcp", "thumb_to_index_mcp", "palm_size_image", "aperture")
+_DICTS = ("curl", "openness", "spread", "thumb_tip_dist", "thumb_tip_dist_image", "tip_height",
+          "joint_flexion", "tip_to_palm", "tip_reach")
 _ARRAYS = ("image_points", "wrist_image", "palm_normal", "palm_normal_image")
 
 

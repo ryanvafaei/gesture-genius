@@ -2,17 +2,22 @@
 Numbers and charts for the report, from the saved CSV files.
 
 Reads data/ (Eleanor, or whoever used the app normally) and every guest
-folder in data/guests/ (python main.py --guest, e.g. at the marketplace):
+folder in data/guests/ (python main.py --guest, e.g. at the marketplace;
+each guest has a unique id and its own folder, rehab/guests.py):
 
-    python -m tools.report                      # writes data/report/
+    python -m tools.report                      # everyone: writes data/report/
     python -m tools.report --data data --out data/report
+    python -m tools.report --data data/guests/<id> --user <id>
+                                                # one guest: data/guests/<id>/<id>_report/
 
 Writes
   summary.csv    per exercise and user group: sessions, reps, success rate,
                  range reached, hints and compensation per rep, movement
                  time, smoothness, and symmetry / turns where they apply
-  sessions.csv   one row per session of everyone, with the 1-5 ratings
-                 (exertion, enjoyment, ease) and whether Stop was pressed
+  users.csv      one row per user (Eleanor and every guest by id): sessions,
+                 first and last day, reps, success rate, mean ratings
+  sessions.csv   one row per session of everyone, with the user, the 1-5
+                 ratings (exertion, enjoyment, ease) and whether Stop was pressed
   report.md      the same as plain tables, ready to paste into the report
   *.png          range and success over sessions per exercise, and the ratings
 
@@ -28,6 +33,7 @@ from pathlib import Path
 import pandas as pd
 
 from rehab import config
+from rehab.guests import MAIN_USER, PREFIX, user_of
 
 RATINGS = ("exertion", "enjoyment", "ease")
 
@@ -39,21 +45,28 @@ def _read(path):
         return None
 
 
-def load(data_dir):
-    """All CSVs of data_dir and its guest folders, with a "user" column."""
+def load(data_dir, user=None):
+    """
+    All CSVs of data_dir and its guest folders, with "user" and "group"
+    columns. With user: only data_dir itself, as that user (one guest).
+    """
     data_dir = Path(data_dir)
-    folders = [("eleanor", data_dir)]
-    guests = data_dir / "guests"
-    if guests.is_dir():
-        folders += [(f"guest-{p.name}", p) for p in sorted(guests.iterdir()) if p.is_dir()]
+    if user:
+        folders = [(user, data_dir)]
+    else:
+        folders = [(MAIN_USER, data_dir)]
+        guests = data_dir / "guests"
+        if guests.is_dir():
+            folders += [(user_of(p.name), p) for p in sorted(guests.iterdir()) if p.is_dir()]
     tables = {}
     for name in ("sessions", "history", "reps"):
         parts = []
-        for user, folder in folders:
+        for who, folder in folders:
             df = _read(folder / f"{name}.csv")
             if df is not None and len(df):
-                df.insert(0, "user", user)
-                df.insert(1, "group", "guests" if user.startswith("guest") else "eleanor")
+                df = df.drop(columns=[c for c in ("user", "group", "user_id") if c in df])
+                df.insert(0, "user", who)
+                df.insert(1, "group", "guests" if who.startswith(PREFIX) else MAIN_USER)
                 parts.append(df)
         tables[name] = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
     return tables
@@ -96,6 +109,31 @@ def summary(history):
     return pd.DataFrame(rows)
 
 
+def users_summary(sessions, history):
+    """One row per user: how much and how well, and the mean ratings."""
+    if sessions.empty and history.empty:
+        return pd.DataFrame()
+    users = sorted(set(sessions.get("user", [])) | set(history.get("user", [])))
+    rows = []
+    for user in users:
+        s = sessions[sessions["user"] == user] if not sessions.empty else sessions
+        h = history[history["user"] == user] if not history.empty else history
+        reps = h["reps_done"].sum() if len(h) else 0
+        row = {"user": user, "group": "guests" if user.startswith(PREFIX) else MAIN_USER,
+               "sessions": len(s),
+               "first": s["date"].min() if len(s) and "date" in s else "",
+               "last": s["date"].max() if len(s) and "date" in s else "",
+               "exercises": h["exercise"].nunique() if len(h) else 0,
+               "reps": int(reps),
+               "success_rate": round((h["success_rate"] * h["reps_done"]).sum() / reps, 3)
+               if reps else ""}
+        for key in RATINGS:
+            v = pd.to_numeric(s[key], errors="coerce").dropna() if key in s else pd.Series(dtype=float)
+            row[key] = round(v.mean(), 2) if len(v) else ""
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def ratings_summary(sessions):
     rows = []
     if sessions.empty:
@@ -123,8 +161,8 @@ def markdown(df):
     return "\n".join(lines) + "\n"
 
 
-def charts(history, sessions, out):
-    """PNG charts; skipped quietly when matplotlib is missing."""
+def charts(history, sessions, out, user=MAIN_USER):
+    """PNG charts (progress of one user, ratings of all); skipped quietly without matplotlib."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -132,7 +170,7 @@ def charts(history, sessions, out):
     except ImportError:
         return []
     made = []
-    mine = history[history["group"] == "eleanor"] if not history.empty else history
+    mine = history[history["user"] == user] if not history.empty else history
     for exercise, h in (mine.groupby("exercise") if not mine.empty else []):
         h = h.reset_index(drop=True)
         fig, ax = plt.subplots(figsize=(6, 3.2))
@@ -154,7 +192,7 @@ def charts(history, sessions, out):
             for group, s in sessions.groupby("group"):
                 v = pd.to_numeric(s[key], errors="coerce").dropna().astype(int)
                 counts = [int((v == i).sum()) for i in range(1, 6)]
-                offset = -0.2 if group == "eleanor" else 0.2
+                offset = -0.2 if group == MAIN_USER else 0.2
                 ax.bar([i + offset for i in range(1, 6)], counts, width=0.4, label=group)
             ax.set_xticks(range(1, 6))
             ax.set_title(key)
@@ -167,21 +205,26 @@ def charts(history, sessions, out):
     return made
 
 
-def build(data_dir, out):
+def build(data_dir, out, user=None):
+    """The report of everyone in data_dir, or with user of that one user (e.g. a guest)."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    t = load(data_dir)
+    t = load(data_dir, user)
     summ = summary(t["history"])
     rate = ratings_summary(t["sessions"])
+    users = users_summary(t["sessions"], t["history"])
     summ.to_csv(out / "summary.csv", index=False)
+    users.to_csv(out / "users.csv", index=False)
     t["sessions"].to_csv(out / "sessions.csv", index=False)
-    pictures = charts(t["history"], t["sessions"], out)
+    pictures = charts(t["history"], t["sessions"], out, user or MAIN_USER)
     s = t["sessions"]
+    title = f"# Coach data for the report: {user}\n" if user else "# Coach data for the report\n"
     lines = [
-        "# Coach data for the report\n",
-        f"Sessions: {len(s)} ({(s['group'] == 'eleanor').sum() if len(s) else 0} normal, "
+        title,
+        f"Sessions: {len(s)} ({(s['group'] == MAIN_USER).sum() if len(s) else 0} normal, "
         f"{(s['group'] == 'guests').sum() if len(s) else 0} guest). "
         f"Stop pressed in {(s.get('safety_stop', pd.Series(dtype=str)) == 'yes').sum()} sessions.\n",
+        "## Per user\n", markdown(users),
         "## Per exercise (objective)\n", markdown(summ),
         "## Ratings at the end of a session (1-5, subjective)\n",
         "exertion: 1 very easy - 5 very hard; enjoyment: 1 not at all - 5 very much; "
@@ -196,9 +239,13 @@ def build(data_dir, out):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data", default=str(config.DATA_DIR))
-    p.add_argument("--out", default=None, help="default: <data>/report")
+    p.add_argument("--out", default=None,
+                   help="default: <data>/report, or <data>/<user>_report with --user")
+    p.add_argument("--user", default=None,
+                   help="only this user's folder (--data), e.g. a guest's id")
     args = p.parse_args()
-    out = build(args.data, args.out or Path(args.data) / "report")
+    default = Path(args.data) / (f"{args.user}_report" if args.user else "report")
+    out = build(args.data, args.out or default, args.user)
     print(f"Report written to {out}")
 
 

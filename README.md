@@ -79,8 +79,15 @@ time, and never makes a missed day feel like a failure.
 - **Asks how it went**: at the end of a session she rates how hard it was and how much she
   enjoyed it (1–5, a key or that many fingers held up). `tools/report.py` turns all of this into
   tables and charts for the report.
-- **Guests keep their own data**: `--guest` (e.g. at the marketplace) uses a separate folder and
-  skips the first-time questions, so her own data is never touched.
+- **Every guest is a new user**: `--guest` or "New guest" in the toolbar (e.g. at the
+  marketplace) creates a guest with a unique id (`guest-007-20260925-143012`), its own folder and
+  its own report, and skips the first-time questions, so her own data is never touched.
+- **Toolbar in the menu**: hidden until `i` or the icon at the top right is pressed. Short
+  sessions on / off, a new guest, back to her own profile, and the report (with its charts)
+  without a terminal.
+- **Verbose log for tuning**: `--verbose` logs every frame (landmarks, measures, detector
+  state), every event and the camera video; `tools/verbose_summary.py` turns a log into tracking
+  and detection numbers with suggested settings.
 - **Works offline and on any OS**: macOS, Windows and Linux; no internet or account needed.
 
 ---
@@ -108,9 +115,12 @@ python main.py --video recording.mp4        # run on a recording instead of the 
 python main.py --video rec.mp4 --no-mirror  # a recording that is already mirrored
 python main.py --no-speech                  # print what the coach says instead of speaking
 python main.py --windowed                   # start in a window instead of full screen
-python main.py --guest --short              # a visitor: own data folder, short sets
-python main.py --guest --hand Right         # a visitor who trains the right hand
+python main.py --guest --short              # a new guest (unique id, own folder), short sets
+python main.py --guest --hand Right         # a new guest who trains the right hand
+python main.py --verbose                    # log everything (and the video) for tuning
+python main.py --verbose --no-video         # the same without the camera video
 python -m tools.report                      # tables and charts from the saved data
+python -m tools.verbose_summary --latest    # what the newest verbose log says
 python -m pytest tests                      # tests (synthetic hands, no camera needed)
 ```
 
@@ -137,6 +147,9 @@ at a card and hold still.
 | Key | What it does |
 |---|---|
 | space | yes / start / continue / pause; skips a rest |
+| `k` | skip: the exercise (from its card to the last set; reps done are kept) or the rest (also a **Skip** button to click) |
+| `i` | in the menu: open / close the toolbar (or click the icon at the top right) |
+| `t` / `g` / `b` / `o` | toolbar open: short sessions on / off; **new guest** (a new session for a new guest with a unique id and folder); back to her own profile (while a guest is active); make the report and open its folder (a guest's own report while a guest is active) |
 | `y` / `n` | yes / no |
 | `1`–`9` | in the menu: pick one exercise (two columns) |
 | `0` or space | in the menu: all of today's exercises |
@@ -203,8 +216,8 @@ greeting → check-in → menu or today's plan → [activity card → calibratio
 | 1 | `grip_release` — open and close your hand | average finger openness (MCP+PIP+DIP flexion), per finger scaled to her range | open, hold → close, hold |
 | 2 | `finger_abduction` — spread your fingers | sum of the 3 gaps between fingers, angles in the palm plane | spread, hold → together, hold (pauses if fingers bend) |
 | 3 | `thumb_flexion` — bend and stretch your thumb | thumb MCP+IP flexion combined with thumb tip → pinky MCP distance | in, hold → out, hold |
-| 4 | `thumb_opposition` — touch your fingertips | thumb-to-fingertip distances / palm size | a sequence of touches: guided (level 1), then from memory (levels 2+) |
-| 5 | `finger_tapping` — lift one finger at a time | fingertip height above the calibrated flat hand + MCP angle | a sequence of lifts: in order, called out, or a remembered pattern |
+| 4 | `thumb_opposition` — touch your fingertips | per finger, thumb-to-fingertip distance (3D and in the picture) between her calibrated touch of that finger and her open hand | a sequence of touches: guided (level 1), then from memory (levels 2+) |
+| 5 | `finger_tapping` — lift one finger at a time | fingertip height above the flat hand and MCP angle, averaged, against a threshold per finger (the ring finger lifts least) | a sequence of lifts: in order, called out, or a remembered pattern |
 | 6 | `grip_squeeze` — squeeze a rolled cloth | finger closure between "holding" and "squeezing" the cloth | squeeze, hold 4 s → relax 4 s (every other day) |
 | 7 | `bubble_pinch` — pinch the bubble | thumb tip → index tip distance / palm size, scaled between her "open" and "pinch" | pinch, hold 2 s (a bubble shrinks and pops) → let go |
 | 8 | `two_hand_match` — both hands together | the affected hand's openness drives the reps; the other hand's openness gives the **symmetry** (1 − mean gap) | open both, hold → close both, hold |
@@ -212,7 +225,17 @@ greeting → check-in → menu or today's plan → [activity card → calibratio
 
 Default sets and reps (from the rehabilitation video, low end of stage 4): 3 × 10 for exercises
 1–3, 2 × 3 rounds for thumb opposition, 2 × 2 rounds for finger tapping, 2 × 8 for grip squeeze.
-All are in `rehab/config.py`.
+All are in `rehab/config.py`. Short sessions (`--short` or the toolbar): 1 set of 3 reps (1 round
+for the sequences and the memory game) and a 5 s rest between exercises.
+
+Detection details: the thumb-opposition calibration measures a touch on **each** fingertip (the
+ring and little fingers are further from the thumb and tracked less well), and when the prompted
+finger and a neighbour are both at the thumb, the prompted finger counts. Finger tapping scales
+each finger's lift threshold (`finger_scale`: ring 0.55, little 0.6, middle 0.85 of the index),
+lets the flat position follow a hand that settles on the table, and prefers the prompted finger
+when a neighbour rises with it; neighbours may move a little without lowering the isolation
+score. Finger counting for the ratings looks at how far each fingertip reaches beyond its middle
+joint, which stays reliable when the fingers point at the camera.
 
 The two sequence exercises also train memory: thumb opposition moves up a level after two
 error-free rounds in a row, and finger tapping logs reaction time and an **isolation score** (how
@@ -421,9 +444,44 @@ renamed, so a crash never leaves half a file. An unreadable file is set aside
 (`*.broken-<time>`), and the coach starts as on a first day rather than remembering something
 wrong. Older data files are upgraded automatically (new CSV columns, `thresholds` → `targets`).
 
-**Guests** (`--guest`) get their own folder, `data/guests/<time>/`, with the same files. A
-guest profile starts with the first coach name and three activities chosen, so there are no
-first-time questions. `python -m tools.report` reads `data/` and every guest folder.
+**Guests** (`--guest`, or "New guest" in the toolbar) are each a new user with a unique id,
+`guest-<number>-<date>-<time>` (e.g. `guest-007-20260925-143012`: the number is easy to write on
+a questionnaire, the time keeps it unique). Everything of a guest is in one folder named after
+the id:
+
+```
+data/guests/guests.csv                          every guest: id, created, hand
+data/guests/<id>/                               profile, reps, history, sessions ... (as above)
+data/guests/<id>/<id>_report/                   the guest's own report (made when the guest's
+                                                session ends, and by "Make report")
+data/guests/<id>/verbose/<id>_<session>/        verbose logs of the guest's sessions
+```
+
+A guest profile starts with the first coach name and three activities chosen, so there are no
+first-time questions. `sessions.csv` has a `user_id` column (the guest's id, or `eleanor`).
+`python -m tools.report` reads `data/` and every guest folder and lists each guest as its own
+user (`users.csv`, "Per user"); `python -m tools.report --data data/guests/<id> --user <id>`
+makes one guest's report.
+
+**Verbose logs** (`python main.py --verbose`) are for tuning the calibration, the detection and
+the tracking after a session. One folder per session, `<data>/verbose/<user>_<session>/`:
+
+| File | What |
+|---|---|
+| `session.json` | who and when, software versions, camera, the whole `config.py`, the stored calibrations; at the end frames, frame rate, loop time and dropped video frames |
+| `frames.jsonl.gz` | one line per camera frame: timing, every hand seen (21 image + 21 world landmarks, handedness, gesture), the measures the exercises use, the quality problem, the stage, and the detector's inner state (lift scores and flat baseline, touch closeness, candidate, prompted finger, finger counts during ratings, calibration step) |
+| `events.jsonl` | stage changes, keys, clicks, every line the coach spoke, each exercise's settings and thresholds, calibration results, detections (finger, prompted finger, right or wrong), reps, ratings, skips, toolbar actions |
+| `video.mp4` | the camera image (not mirrored) on a real-time timeline; `video_frame` in `frames.jsonl.gz` is its frame number. `python main.py --video <folder>/video.mp4` replays the session (`--no-video` leaves it out) |
+
+`python -m tools.verbose_summary <folder>` (or `--latest`) writes `summary.md` and
+`summary.json` into the folder: frame rate and loop time; how often the hand was seen, the
+right hand, too far, palm turned away, handedness flips and drop-outs; the noise floor while the
+hand was held still in calibration (jitter per measure and per landmark, in mm); per exercise and
+finger the prompts, found, wrong fingers, how strong the prompted finger's signal was against its
+threshold and the neighbours', near misses, and a suggested setting where the numbers point to one
+(e.g. `finger_scale` for a finger whose lifts stay close to the threshold); and how steady the
+finger counts were during the ratings. The video shows the person: record only with consent and
+delete the logs when they are no longer needed.
 
 **Deleting the profile** (profile screen, `d` then `y`) removes `profile.json`, `garden.json`,
 `reps.csv`, `history.csv`, `sessions.csv` and the two benchmark logs together. By default they are moved to
@@ -489,6 +547,10 @@ models/                    MediaPipe models (the app uses gesture_recognizer.tas
 tools/tracking_check.py    detection rate and jitter of each measure with your camera
 tools/validate.py          program rep count vs. a count by hand, on recorded videos
 tools/report.py            tables, charts and report.md from all saved data (including guests)
+tools/report_job.py        the toolbar's "Make report": runs tools.report in the background
+tools/verbose_summary.py   tracking, noise and detection numbers from a --verbose log
+rehab/guests.py            a unique id and folder for every guest
+rehab/verbose.py           the --verbose log: frames, events and the camera video
 tools/body_check.py        arm angle jitter vs. tolerance, and agreement with a goniometer
 tests/                     unit and session tests driven by a synthetic 3D hand and a synthetic body
 ```
@@ -548,15 +610,19 @@ text-to-speech backend choice are all tested with made-up hands and bodies.
 
 ## At the marketplace
 
-1. Start every visitor with `python main.py --guest --short` (add `--hand Right` for someone who
-   wants to use the right hand). Each visitor gets a fresh folder in `data/guests/`, and Eleanor's
-   own data stays untouched.
+1. Start the first visitor with `python main.py --guest --short` (add `--hand Right` for someone
+   who wants to use the right hand); for every next visitor press **New guest** in the menu's
+   toolbar (`i`, then `g`). Each visitor gets a unique id and a fresh folder in `data/guests/`
+   (the id is shown in the toolbar: write it on their questionnaire), and Eleanor's own data
+   stays untouched.
 2. Visitors play Eleanor: the coach greets them by her name, and the first-time questions are
    skipped. They still measure their own hand once per exercise.
 3. After their session they answer the ratings on screen (guests also get "How easy was the coach
    to use?"). Hand out a paper usability questionnaire (e.g. SUS) as well for the report.
-4. Afterwards run `python -m tools.report` and give `data/report/report.md` and the charts to
-   whoever writes the report.
+4. Each guest's own report is made in `data/guests/<id>/<id>_report/` when their session ends.
+   Afterwards run `python -m tools.report` (or "Make report" in the toolbar from her own
+   profile) for everyone together, and give `data/report/report.md` and the charts to whoever
+   writes the report.
 
 ---
 

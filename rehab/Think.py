@@ -49,11 +49,26 @@ Always available
      space) when she feels fine goes back to the menu. Logged for the
      therapist. The app never decides it is an emergency and never calls.
   r  repeat: says what belongs to this screen again.
+  k  skip (or the Skip button): during an exercise (from its card to the
+     last set) go on to the next exercise, keeping the reps done; during a
+     rest, end the rest.
+
+Toolbar (menu only, hidden until i or the icon at the top right is
+pressed): short sessions on / off (t), new guest (g: the session ends and
+a new one starts for a new guest with a unique id and its own data
+folder, rehab/guests.py), back to her own profile (b, while a guest is
+active), and make the report with its charts (o, tools/report.py; a
+guest's own report while a guest is active).
+
+Verbose logging (main --verbose): `trace` (a callable(kind, **data)) gets
+every stage change, key, click, calibration, detection, rep, rating and
+skip, and debug_state() gives the inner state of each frame (rehab/verbose.py).
 
 Before goodbye she rates the session from 1 to 5 (how hard, how enjoyable,
 and for guests how easy to use), with keys 1-5 or by holding up 1-5 fingers.
 """
 
+import collections
 from datetime import datetime
 
 from rehab import benchmarks, config, memory
@@ -100,6 +115,10 @@ BODY_STAGES = ("setup_check", "calibration_offer", "calibrating", "exercise")
 YES_NO_STAGES = QUESTION_STAGES + CONTINUE_STAGES + PROFILE_STAGES + ("safety",)
 # stages where the exercise number ("Exercise 2 of 7") is shown
 STEP_STAGES = ("intro", "calibration_offer", "calibrating", "setup_check", "exercise", "rest")
+# stages of one exercise that Skip (k) leaves for the next exercise
+SKIP_STAGES = ("intro", "calibration_offer", "calibrating", "setup_check", "exercise")
+# toolbar keys (while it is open in the menu)
+TOOLBAR_KEYS = {"t": "short", "g": "new_guest", "b": "main_profile", "o": "report"}
 
 
 class YesNo:
@@ -160,17 +179,32 @@ class FingerCount:
     A number from 1 to 5 shown with raised fingers (either hand), held
     steady for hold_s -> that number. Like YesNo, the hand has to come down
     (no fingers raised) before the next answer counts.
+
+    The count of each frame is voted over the last window_s: one frame in
+    which a finger is missed (tracking noise) does not restart the hold.
     """
 
-    def __init__(self, hold_s=config.RATING_HOLD_S):
+    def __init__(self, hold_s=config.RATING_HOLD_S, window_s=config.RATING_VOTE_S):
         self.hold_s = hold_s
+        self.window_s = window_s
         self._seen = 0
+        self.raw = 0
         self.reset()
 
     def reset(self):
         self._armed = False
         self._value = None
         self._since = None
+        self._recent = collections.deque()
+
+    def _vote(self, n, now):
+        """The most frequent count of the last window_s (the newest one on a tie)."""
+        self._recent.append((now, n))
+        while self._recent and now - self._recent[0][0] > self.window_s:
+            self._recent.popleft()
+        counts = collections.Counter(v for _, v in self._recent)
+        best = max(counts.values())
+        return next(v for _, v in reversed(self._recent) if counts[v] == best)
 
     @staticmethod
     def count(f):
@@ -179,7 +213,8 @@ class FingerCount:
         return max(count_extended(f), count_extended(getattr(f, "other", None)))
 
     def update(self, f, now):
-        n = self.count(f)
+        self.raw = self.count(f)
+        n = self._vote(self.raw, now)
         self._seen = n
         if n == 0:
             self._armed = True
@@ -202,10 +237,16 @@ class FingerCount:
         return self._value, min(1.0, max(0.0, (now - self._since) / self.hold_s)), True
 
 
+def _no_trace(kind, **data):
+    pass
+
+
 class Coach:
 
-    def __init__(self, exercise, speaker, log, hand=config.AFFECTED_HAND, progress=None):
+    def __init__(self, exercise, speaker, log, hand=config.AFFECTED_HAND, progress=None,
+                 trace=None):
         self.exercise = exercise
+        self.trace = trace or _no_trace
         self.speaker = speaker
         self.log = log
         self.progress = progress
@@ -249,6 +290,7 @@ class Coach:
         if problem:
             self.exercise.skip_frame(now)
             if problem != self._problem:
+                self.trace("quality", problem=problem)
                 self._problem, self._problem_since = problem, now
             grace = getattr(self.exercise, "quality_grace_s", config.QUALITY_GRACE_S)
             if now - self._problem_since >= grace:
@@ -266,6 +308,8 @@ class Coach:
             return
 
         was_interrupted = self._interrupted
+        if self._problem is not None:
+            self.trace("quality", problem=None)
         self._problem = None
         self.quality = None
         self._interrupted = False
@@ -277,6 +321,7 @@ class Coach:
         self.exercise.new_reps.clear()
         difficult = bool(self.progress and self.progress.difficult)
         for rec in reps:
+            self.trace("rep", **vars(rec))
             if self.log is not None:
                 self.log.log_rep(rec, difficult_day=difficult)
         if not reps or self.progress is None:
@@ -295,7 +340,7 @@ class SessionManager:
     def __init__(self, speaker, profile, log, exercises=None, save_profile=None,
                  garden=None, save_garden=None, character=None, activities=None,
                  delete_profile=None, short=False, rating_questions=config.RATING_QUESTIONS,
-                 therapist=None):
+                 therapist=None, guest_id=None, make_report=None, trace=None):
         self.speaker = speaker
         self.profile = profile
         self.log = log
@@ -314,7 +359,14 @@ class SessionManager:
         self.progress = SessionProgress(profile, log, therapist=self.therapist)
         self.yes_no = YesNo()
         self.finger_count = FingerCount()
-        self.short = short                  # one short set per exercise (guests)
+        self.short = short                  # one short set per exercise (guests); toolbar toggle
+        self.guest_id = guest_id            # a guest's unique id (rehab/guests.py), None: her own
+        self.switch_user = None             # toolbar: "new_guest" / "main_profile"; main starts it
+        self.trace = trace or _no_trace     # verbose log (main --verbose)
+        self.make_report = make_report      # () -> job with status() -> (state, text), or None
+        self._report_job = None
+        self.toolbar_open = False
+        self.skipped = []                   # exercises left with Skip
         self.rating_questions = tuple(rating_questions or ())
         self.ratings = {}                   # question -> 1..5 ("" when skipped)
         self._rating_index = None           # None: not asked yet
@@ -385,7 +437,15 @@ class SessionManager:
         return self.therapist.get("affected_side") or \
             self.profile.get("affected_hand", config.AFFECTED_HAND).lower()
 
+    @property
+    def guest(self):
+        return self.guest_id is not None
+
     def _enter(self, stage, now):
+        if stage != "menu":
+            self.toolbar_open = False       # only on the menu page
+        if stage != self.stage:
+            self.trace("stage", stage=stage, exercise=self.name, set=self.set_no)
         self.stage = stage
         self._stage_t = now
         self._quiet_t = now
@@ -431,9 +491,14 @@ class SessionManager:
             params["reps"] = short["reps"] if counts_reps else short["rounds"]
         self.exercise = create(self.name, calibrations(self.profile), thresholds,
                                params=params, **kwargs)
+        self.exercise.trace = self.trace
+        self.trace("exercise", exercise=self.name, params=self.exercise.params,
+                   calibration=calibrations(self.profile).get(self.name),
+                   detector=self.exercise.debug_settings())
         self._target_start = target if target is not None else float("nan")
         self.activity = memory.activity_for(self.name, self.profile, self.activities)
-        self.coach = Coach(self.exercise, self.speaker, self.log, hand, progress=self.progress)
+        self.coach = Coach(self.exercise, self.speaker, self.log, hand, progress=self.progress,
+                           trace=self.trace)
 
     def _gestures(self, f, gestures):
         if gestures is not None:
@@ -470,7 +535,78 @@ class SessionManager:
 
     def on_key(self, key, now):
         """key: " ", "up", "down", "m", "p", "d", "y", "n", "e", "s", "r" or a digit."""
+        self.trace("key", key=key, stage=self.stage)
         self._handle(self._on_key, key, now)
+
+    def on_click(self, action, now):
+        """A click on a button Act drew: "toolbar", "skip" or a toolbar item (TOOLBAR_KEYS)."""
+        self.trace("click", action=action, stage=self.stage)
+        self._handle(self._on_click, action, now)
+
+    def _on_click(self, action, now):
+        if action == "skip":
+            if self.stage in SKIP_STAGES + ("rest",):
+                self._skip(now)
+        elif self.stage == "menu":
+            if action == "toolbar":
+                self.toolbar_open = not self.toolbar_open
+            elif self.toolbar_open and action in TOOLBAR_KEYS.values():
+                self._toolbar(action, now)
+
+    # --- toolbar (menu) -------------------------------------------------------------
+
+    def _toolbar(self, item, now):
+        self.trace("toolbar", item=item)
+        if item == "short":
+            self.short = not self.short
+            self.speaker.clear()
+            self._say("Short sessions are on." if self.short else "Short sessions are off.")
+        elif item == "new_guest" or (item == "main_profile" and self.guest):
+            # main saves this session and starts a new one: a new guest, or her own
+            self.switch_user = item
+            self.done = True
+        elif item == "report":
+            if self.make_report is None:
+                return
+            if self._report_job is not None and self._report_job.status()[0] == "running":
+                return
+            self._report_job = self.make_report()
+            self.speaker.clear()
+            self._say("I'm making the report.")
+
+    def _toolbar_view(self):
+        report = self._report_job.status()[1] if self._report_job is not None else ""
+        now = self.guest_id or self.profile.get("name") or "her profile"
+        items = [
+            {"id": "short", "key": "T", "label": "Short sessions", "on": self.short},
+            {"id": "new_guest", "key": "G", "label": "New guest", "status": f"Now: {now}"},
+        ]
+        if self.guest:
+            items.append({"id": "main_profile", "key": "B", "label": "Main profile",
+                          "status": f"back to {config.USER_NAME}"})
+        items.append({"id": "report", "key": "O", "label": "Make report",
+                      "status": report or ("this guest" if self.guest else "everyone")})
+        return {"open": self.toolbar_open, "user": now, "items": items}
+
+    # --- skip ---------------------------------------------------------------------
+
+    def _skip(self, now):
+        """Rest: end it. Exercise: keep what was done and go on to the next one."""
+        self.trace("skip", stage=self.stage, exercise=self.name, set=self.set_no)
+        self.speaker.clear()
+        if self.stage == "rest":
+            self._end_rest(now)
+            return
+        self._record_unfinished()
+        if self.name:
+            self.skipped.append(self.name)
+        self.paused = False
+        self.calibration = None
+        self._setup = None
+        self._quality = None
+        self._after_rest = None
+        self._say("Let's skip this one.")
+        self._next_exercise(now)
 
     def _on_key(self, key, now):
         if key == "s" and self.stage not in ("start", "safety", "profile_deleted"):
@@ -508,6 +644,9 @@ class SessionManager:
         if self.stage in QUESTION_STAGES:
             if key in (" ", "y", "n"):
                 self._answer(key != "n", now)
+            return
+        if key == "k" and self.stage in SKIP_STAGES + ("rest",):
+            self._skip(now)
             return
         if key == "m" and not self.fixed and not self._ended and self.stage not in (
                 "start", "greeting", "today_plan"):
@@ -767,6 +906,12 @@ class SessionManager:
         self._enter("menu", now)
 
     def _menu_key(self, key, now):
+        if key == "i":
+            self.toolbar_open = not self.toolbar_open
+            return
+        if self.toolbar_open and key in TOOLBAR_KEYS:
+            self._toolbar(TOOLBAR_KEYS[key], now)
+            return
         if key == "up":
             self.menu_index = (self.menu_index - 1) % len(self.menu)
         elif key == "down":
@@ -956,6 +1101,8 @@ class SessionManager:
         """Store the calibration; for an arm exercise it is also the weekly assessment."""
         old = self.profile["calibration"].get(self.name)
         entry = self.calibration.as_profile_entry()
+        self.trace("calibration", exercise=self.name, entry=entry,
+                   attempt=getattr(self.calibration, "attempt", None))
         if is_arm(self.name):
             self.speaker.say(self.progress.assessment_done(EXERCISES[self.name], entry, old))
         self.profile["calibration"][self.name] = entry
@@ -1019,7 +1166,8 @@ class SessionManager:
         remaining = [n for n in self.plan[self.index + 1:]
                      if self.fixed or not self._from_all or not self.progress.skip_today(n)]
         if remaining:
-            rest = self._rest_seconds(config.REST_BETWEEN_EXERCISES_S)
+            rest = (config.SHORT_SESSION["rest_between_exercises_s"] if self.short
+                    else self._rest_seconds(config.REST_BETWEEN_EXERCISES_S))
             self._say(f"Let's rest for {rest} seconds.")
             self._rest(now, rest, then="next_exercise")
         else:
@@ -1126,6 +1274,7 @@ class SessionManager:
     def _rate(self, value, now):
         """value: 1..5, or None (skipped or no answer)."""
         key = self.rating_questions[self._rating_index]
+        self.trace("rating", question=key, value=value)
         self.ratings[key] = value if value else ""
         if value:
             self.speaker.say(event("RatingThanks"))
@@ -1254,6 +1403,7 @@ class SessionManager:
         end = datetime.now()
         return {
             "session_id": self.log.session_id,
+            "user_id": self.guest_id or "eleanor",
             "date": self.progress.today.isoformat(),
             "start": self._started_at.isoformat(timespec="seconds"),
             "end": end.isoformat(timespec="seconds"),
@@ -1268,7 +1418,9 @@ class SessionManager:
             "highlight": best.type + (f":{best.get('level')}" if best.get("level") else "")
             if best else "",
             "garden": f"{grew.get('plant')}:{grew.get('stage')}" if grew else "",
-            "note": "She pressed Stop / I don't feel well." if self._safety else "",
+            "note": " ".join(n for n in (
+                "She pressed Stop / I don't feel well." if self._safety else "",
+                f"Skipped: {', '.join(self.skipped)}." if self.skipped else "") if n),
             "safety_stop": "yes" if self._safety else "no",
             **{key: self.ratings.get(key, "") for key in ("exertion", "enjoyment", "ease")},
         }
@@ -1279,6 +1431,34 @@ class SessionManager:
         if (self.summaries or self.progress.check_in) and not self._ended:
             self.end_session(self._plant_options[0] if self._plant_options else None)
         self.save_profile(self.profile)
+
+    # --- verbose log -------------------------------------------------------------------
+
+    def debug_state(self):
+        """What the session and the active detector are doing this frame (verbose log)."""
+        d = {"stage": self.stage, "exercise": self.name, "set": self.set_no,
+             "paused": self.paused, "short": self.short, "user": self.guest_id or "eleanor"}
+        if self.stage in YES_NO_STAGES:
+            answer, progress = self.yes_no.state(self._t)
+            d["yes_no"] = {"answer": answer, "progress": progress}
+        if self.stage == "rating":
+            fingers, held, armed = self.finger_count.state(self._t)
+            d["rating"] = {"question": self.rating_questions[self._rating_index],
+                           "raw": self.finger_count.raw, "voted": fingers, "hold": held,
+                           "armed": armed}
+        if self.stage == "calibrating" and self.calibration:
+            step = self.calibration.step
+            d["calibration"] = {"step": step.name if step else None,
+                                "stage": getattr(self.calibration, "_stage", None),
+                                "progress": self.calibration.progress,
+                                "attempt": getattr(self.calibration, "attempt", None),
+                                "problem": self._cal_problem}
+        if self.stage == "setup_check" and self._setup:
+            d["setup"] = {"problem": self._setup.problem}
+        if self.stage == "exercise" and self.exercise and self.coach:
+            d["quality"] = self.coach._problem
+            d["detector"] = self.exercise.debug_state()
+        return d
 
     # --- what Act draws -----------------------------------------------------------------
 
@@ -1322,6 +1502,8 @@ class SessionManager:
                            if self.stage in QUESTION_STAGES else "Thumbs up or space bar: continue")
             if self.stage == "intro":
                 v["footer"] = "Thumbs up: start   Space: pause"
+        if self.stage in SKIP_STAGES + ("rest",) and self.name:
+            v["skip"] = {"key": "K", "label": "Skip rest" if self.stage == "rest" else "Skip exercise"}
         if self.stage == "exercise" and self.exercise:
             ex = self.exercise
             v["exercise_display"] = ex.display
@@ -1384,7 +1566,8 @@ class SessionManager:
                 # every-other-day exercises that are not planned today
                 "note": "not today" if item in config.DAILY_PLAN and item not in self.today else "",
             } for i, item in enumerate(self.menu)]
-            v["footer"] = "Space: start   A: arm exercises   E: finish"
+            v["footer"] = "Space: start   A: arm exercises   E: finish   I: toolbar"
+            v["toolbar"] = self._toolbar_view()
         elif self.stage == "arm_menu":
             v["title"] = "Arm exercises"
             v["footer"] = "Up/Down: choose  Space: start  0 or M: back"
@@ -1418,6 +1601,8 @@ class SessionManager:
             v["screen"] = "safety"
             v["card_event"] = self._card_event
             v["footer"] = "Thumbs up or Space: I feel fine   Q: finish for today"
+        if v.get("skip"):
+            v["footer"] = (v["footer"] + "   K: skip").strip()
         if self.stage not in ("start", "safety", "profile_delete", "profile_deleted"):
             v["footer"] = (v["footer"] + "   R: repeat").strip()
             v["stop_hint"] = True           # "S: Stop - I don't feel well" on every screen
