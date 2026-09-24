@@ -233,8 +233,12 @@ freezes:
 
 Voice and rate are per user in `data/profile.json` (default 145 words per minute). Because speech
 is slow, every message is checked again just before it is spoken and skipped when she has already
-done what it asks. Calibration only starts timing a position after its prompt has been spoken.
-Everything that is said is also shown as a subtitle.
+done what it asks; one that goes out of date while it is being spoken is cut off by the next
+instruction. When she moves on (answers, presses space, the next step starts, pause) whatever
+the coach was still saying for the step she left is dropped and cut off, so she only hears what
+belongs to the screen in front of her. Calibration only starts timing a position after its prompt
+has been spoken. Everything that is said is also shown as a subtitle, and cards show the same
+words she hears.
 
 **Screens** (`rehab/Act.py`, `rehab/ui.py`):
 
@@ -244,7 +248,9 @@ Everything that is said is also shown as a subtitle.
 - a menu with large numbered items.
 
 Text uses Pillow with Atkinson Hyperlegible (`assets/fonts`, SIL Open Font License), a font made
-for low vision. Icons and garden pictures are drawn in calm, flat colours. PNGs (for example
+for low vision. Each line is rendered once and reused, so drawing a frame stays at about 2 ms.
+The webcam is read in its own thread that keeps only the newest frame, so a slow frame never
+leaves the screen behind her hand. Icons and garden pictures are drawn in calm, flat colours. PNGs (for example
 exported from Figma) are used instead when present: `assets/icons/<icon>.png`,
 `assets/garden/<plant>_<stage>.png` (stage 0–4), `assets/garden/{bee,butterfly,can,bed}.png`.
 

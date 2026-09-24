@@ -7,6 +7,7 @@ secondary check) it returns `hand_landmarks` (image coordinates) and
 turns into measurements. No extra model is needed.
 """
 
+import threading
 import time
 from pathlib import Path
 
@@ -55,16 +56,46 @@ class Sense:
         self._frame_index = 0
         self._t0 = time.monotonic()
         self._last_ms = -1
+        # A webcam is read in its own thread that keeps only the newest frame:
+        # when a frame takes longer to process than the camera's frame time,
+        # reading in the loop would get ever older buffered frames, and the
+        # screen (and the coach) would lag behind her hand.
+        self._latest = None             # (frame, t), or None when used
+        self._ended = False
+        self._cond = threading.Condition()
+        self._stop = threading.Event()
+        self._reader = None
+        if not self.is_file:
+            self._reader = threading.Thread(target=self._read_camera, daemon=True)
+            self._reader.start()
+
+    def _read_camera(self):
+        while not self._stop.is_set():
+            ok, frame = self.cap.read()
+            t = time.monotonic() - self._t0
+            with self._cond:
+                if ok:
+                    self._latest = (frame, t)
+                else:
+                    self._ended = True
+                self._cond.notify()
+            if not ok:
+                return
 
     def read(self):
         """Next frame and its timestamp in seconds, or (None, None) at the end."""
-        ok, frame = self.cap.read()
-        if not ok:
-            return None, None
         if self.is_file:
+            ok, frame = self.cap.read()
+            if not ok:
+                return None, None
             t = self._frame_index / self.fps
         else:
-            t = time.monotonic() - self._t0
+            with self._cond:
+                while self._latest is None and not self._ended:
+                    self._cond.wait()
+                if self._latest is None:
+                    return None, None
+                (frame, t), self._latest = self._latest, None
         self._frame_index += 1
         if self.mirror:
             frame = cv2.flip(frame, 1)
@@ -90,6 +121,9 @@ class Sense:
         return to_observations(result, mirror_x=unflip)
 
     def close(self):
+        self._stop.set()
+        if self._reader is not None:
+            self._reader.join(timeout=1.0)
         self.recognizer.close()
         self.cap.release()
 

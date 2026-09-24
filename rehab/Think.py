@@ -287,10 +287,33 @@ class SessionManager:
         factor = config.DIFFICULT_REST_FACTOR if self.progress.difficult else 1.0
         return int(round(base * factor))
 
+    # --- speech follows the step she is on ---------------------------------------
+
+    def _step(self):
+        """Where she is; when this changes, what was said before is about a step she left."""
+        return self.stage, self.index, self.set_no, self.paused
+
+    def _handle(self, fn, *args):
+        """
+        Run fn (a frame or a key). When it moved her to another step, drop
+        and cut off what the coach was still saying for the old one; what fn
+        itself said (the new step's words) is kept.
+        """
+        mark = self.speaker.mark() if hasattr(self.speaker, "mark") else None
+        before = self._step()
+        try:
+            fn(*args)
+        finally:
+            if mark is not None and self._step() != before:
+                self.speaker.drop_before(mark)
+
     # --- keys -------------------------------------------------------------------
 
     def on_key(self, key, now):
         """key: " ", "up", "down", "m", "y", "n" or a digit."""
+        self._handle(self._on_key, key, now)
+
+    def _on_key(self, key, now):
         if self.stage == "menu":
             self._menu_key(key, now)
             return
@@ -350,6 +373,9 @@ class SessionManager:
 
     def update(self, f, now, gestures=None):
         """One frame. gestures: [(label, score)] of all hands, for thumbs up / down."""
+        self._handle(self._update, f, now, gestures)
+
+    def _update(self, f, now, gestures):
         self._t = now
         if self.paused or self.done:
             return
