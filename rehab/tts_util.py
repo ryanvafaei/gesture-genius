@@ -10,11 +10,17 @@ Every backend speaks one text and blocks until it has been spoken; the
 Speaker thread in Act.py decides what is said and when. Create the backend
 in the thread that will speak with it: pyttsx3 engines (COM objects on
 Windows) should stay in the thread that made them.
+
+speak(text, cancelled) stops early once cancelled() returns True (she has
+moved on to another step): the `say` / espeak process is ended by stop(),
+pyttsx3 checks cancelled() at every word, since stopping it from another
+thread is not safe.
 """
 
 import shutil
 import subprocess
 import sys
+import threading
 
 
 def detect_os(platform=None):
@@ -35,17 +41,24 @@ class CommandTTS:
     def __init__(self, argv):
         self._argv = argv           # text -> list of arguments
         self._proc = None
+        # checking `cancelled` and starting the process happen together, so a
+        # stop() never falls between them and misses the process
+        self._lock = threading.Lock()
 
-    def speak(self, text):
-        self._proc = subprocess.Popen(self._argv(text),
-                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self._proc.wait()
-        self._proc = None
+    def speak(self, text, cancelled=None):
+        with self._lock:
+            if cancelled is not None and cancelled():
+                return
+            self._proc = proc = subprocess.Popen(self._argv(text), stdout=subprocess.DEVNULL,
+                                                 stderr=subprocess.DEVNULL)
+        proc.wait()
+        with self._lock:
+            self._proc = None
 
     def stop(self):
-        proc = self._proc
-        if proc is not None:
-            proc.terminate()
+        with self._lock:
+            if self._proc is not None:
+                self._proc.terminate()
 
 
 class Pyttsx3TTS:
@@ -55,13 +68,29 @@ class Pyttsx3TTS:
         import pyttsx3
         self._engine = pyttsx3.init()
         self._engine.setProperty("rate", rate)
+        self._cancelled = None
+        try:
+            self._engine.connect("started-word", self._on_word)
+        except Exception:
+            pass                    # no word callbacks: every text is spoken to the end
 
-    def speak(self, text):
-        self._engine.say(text)
-        self._engine.runAndWait()
+    def _on_word(self, name=None, location=None, length=None):
+        if self._cancelled is not None and self._cancelled():
+            self._engine.stop()     # allowed here: this runs inside runAndWait()
+
+    def speak(self, text, cancelled=None):
+        if cancelled is not None and cancelled():
+            return
+        self._cancelled = cancelled
+        try:
+            self._engine.say(text)
+            self._engine.runAndWait()
+        finally:
+            self._cancelled = None
 
     def stop(self):
-        # runAndWait() blocks the speaking thread, which is a daemon: nothing to do
+        # stopping from another thread is not safe: speak() checks `cancelled`
+        # at every word instead
         pass
 
 
