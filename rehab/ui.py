@@ -8,6 +8,10 @@ Text     Pillow draws all text in Atkinson Hyperlegible (assets/fonts) at a
 Screens  card     full screen: greetings, questions, exercise introductions
          summary  one highlight, the garden, the closing message
          garden   the garden with today's growth (short animation)
+         profile  what the coach remembers about her, and "delete my profile"
+         Cards, the summary and the profile show her camera image small
+         (draw_camera), with what the coach sees: her hand, a thumbs up or
+         down being held, or nothing yet.
          The exercise screen itself (camera + panel) is drawn by Act.Display,
          which adds a small activity icon, the watering can and the coach's
          face from here.
@@ -525,15 +529,75 @@ def _answer_row(img, text, y, x_center, labels=("Thumbs up: yes", "Thumbs down: 
         text.add(label, (x0 + box_w / 2, y + box_h * 0.64), size, WHITE, bold=True, align="center")
 
 
+NO_COLOR = (120, 120, 120)
+
+
+def _camera_size(frame, max_w, max_h):
+    fh, fw = frame.shape[:2]
+    k = min(max_w / fw, max_h / fh)
+    return int(fw * k), int(fh * k)
+
+
+def draw_camera(img, frame, box, gesture, text, size=28):
+    """
+    Her camera image, fitted in box (x0, y0, x1, y1) at its top, so she can
+    see that her hand is in view. The border and the line below say what the
+    coach sees; while a thumbs up / down is held a bar fills until it counts.
+    Returns the y below the line.
+    """
+    x0, y0, x1, y1 = [int(v) for v in box]
+    w, h = _camera_size(frame, x1 - x0, y1 - y0)
+    x = x0 + (x1 - x0 - w) // 2
+    img[y0:y0 + h, x:x + w] = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
+    g = gesture or {}
+    answer, progress = g.get("answer"), float(g.get("progress") or 0.0)
+    held = answer in ("yes", "no")
+    color = GREEN if answer == "yes" else NO_COLOR if answer == "no" else GREY
+    t = 8 if held else 3
+    cv2.rectangle(img, (x - t // 2, y0 - t // 2), (x + w + t // 2, y0 + h + t // 2), color, t,
+                  cv2.LINE_AA)
+    if held:
+        bar = max(10, h // 18)
+        cv2.rectangle(img, (x, y0 + h - bar), (x + int(w * progress), y0 + h), color, -1)
+    if answer == "yes":
+        label, ink = "Thumbs up - hold it there", GREEN
+    elif answer == "no":
+        label, ink = "Thumbs down - hold it there", INK
+    elif answer == "lower":
+        label, ink = "Thank you. Now lower your hand", INK
+    elif g.get("hand"):
+        label, ink = "I can see your hand", INK
+    else:
+        label, ink = "Hold your hand up to the camera", SOFT
+    baseline = y0 + h + t + int(size * 1.2)
+    text.add(label, (x + w / 2, baseline), size, ink, bold=held, align="center",
+             max_width=max(w, 200), max_lines=1)
+    return baseline + int(size * 0.45)
+
+
 def card_screen(size, view, text, character=None):
-    """Full-screen card: coach face, title, one message, optional icon and yes/no row."""
+    """
+    Full-screen card: coach face, title, one message, optional icon and yes/no
+    row. With view["camera"], her camera image sits under a smaller face.
+    """
     w, h = size
     img = np.full((h, w, 3), BG, np.uint8)
     card = view.get("card", {})
     face_x = int(w * 0.17)
-    draw_face(img, (face_x, int(h * 0.42)), int(h * 0.2), view.get("mood", "neutral"), character)
+    face_y, r, name_y = int(h * 0.42), int(h * 0.2), int(h * 0.72)
+    camera = view.get("camera")
+    if camera is not None:
+        cam_w, cam_h = _camera_size(camera, int(w * 0.34) - 60, int(h * 0.42))
+        y1 = h - 110                # room for the line under it and the footer
+        y0 = y1 - cam_h
+        draw_camera(img, camera, (face_x - cam_w / 2, y0, face_x + cam_w / 2, y1),
+                    view.get("gesture"), text)
+        r = int(min(h * 0.2, (y0 - 100) / 2.5))
+        face_y = int((y0 - 60) / 2) + 10
+        name_y = face_y + r + 50
+    draw_face(img, (face_x, face_y), r, view.get("mood", "neutral"), character)
     if view.get("coach_name"):
-        text.add(view["coach_name"], (face_x, int(h * 0.42 + h * 0.3)), 36, SOFT, align="center")
+        text.add(view["coach_name"], (face_x, name_y), 36, SOFT, align="center")
     x = int(w * 0.36)
     right = w - 60
     y = int(h * 0.2)
@@ -555,7 +619,9 @@ def card_screen(size, view, text, character=None):
                     or ("Thumbs up: yes", "Thumbs down: no"))
     can = view.get("can")
     if can and can.get("sections"):
-        draw_can(img, (w - 110, h - 110), 110, can["sections"], can.get("filled", 0))
+        # above the answers when there are any, so it never covers one
+        can_y = h - 300 if card.get("yes_no") else h - 110
+        draw_can(img, (w - 110, can_y), 110, can["sections"], can.get("filled", 0))
     text.add(view.get("footer", ""), (40, h - 30), 26, SOFT)
     return img
 
@@ -577,19 +643,70 @@ def garden_screen(size, view, text, character=None):
 
 
 def summary_screen(size, view, text, character=None):
-    """One highlight, the garden as it is, and the closing message."""
+    """One highlight, the garden as it is, and the closing message (camera top right)."""
     w, h = size
     img = np.full((h, w, 3), BG, np.uint8)
     draw_face(img, (120, 130), 80, view.get("mood", "happy"), character)
-    text.add(view.get("title", ""), (240, 110), 56, INK, bold=True, max_width=w - 300)
+    width = w - 300
+    camera = view.get("camera")
+    if camera is not None:
+        cam_w, cam_h = _camera_size(camera, int(w * 0.24), int(h * 0.3))
+        draw_camera(img, camera, (w - 40 - cam_w, 40, w - 40, 40 + cam_h), view.get("gesture"),
+                    text, size=24)
+        width -= cam_w + 40
+    text.add(view.get("title", ""), (240, 110), 56, INK, bold=True, max_width=width)
     y = 190
     lines = view.get("summary_lines", [])
     if lines:
-        y = text.add(lines[0], (240, y), 44, INK, bold=True, max_width=w - 300, max_lines=2) + 30
+        y = text.add(lines[0], (240, y), 44, INK, bold=True, max_width=width, max_lines=2) + 30
     for line in lines[1:4]:
-        y = text.add(line, (240, y), 34, INK, max_width=w - 300, max_lines=2) + 18
+        y = text.add(line, (240, y), 34, INK, max_width=width, max_lines=2) + 18
     g = view.get("garden") or {}
     if g.get("state"):
         draw_garden(img, (240, max(y + 20, int(h * 0.5)), w - 60, h - 70), g["state"])
     text.add(view.get("footer", ""), (40, h - 25), 26, SOFT)
+    return img
+
+
+def profile_screen(size, view, text, character=None):
+    """
+    Her profile: what the coach remembers (view["profile_rows"], label and
+    value), the camera top right, and two answers: back, or delete it.
+    """
+    w, h = size
+    img = np.full((h, w, 3), BG, np.uint8)
+    right = w - 60
+    camera = view.get("camera")
+    if camera is not None:
+        cam_w, cam_h = _camera_size(camera, int(w * 0.26), int(h * 0.3))
+        draw_camera(img, camera, (w - 50 - cam_w, 50, w - 50, 50 + cam_h), view.get("gesture"),
+                    text, size=24)
+        right = w - 50 - cam_w - 50
+    x = 60
+    y = text.add(view.get("title", ""), (x, 100), 56, INK, bold=True, max_width=right - x)
+    rows = view.get("profile_rows", [])
+    bottom = h - 175
+    if (bottom - y - 140) / max(1, len(rows)) >= 44:        # room for the line under the title
+        y = text.add(view.get("message", ""), (x, y + 45), 32, SOFT, max_width=right - x,
+                     max_lines=2)
+    top = int(y + 70)
+    row_h = int(np.clip((bottom - top) / max(1, len(rows)), 38, 66))
+    size_ = int(np.clip(row_h * 0.54, 24, 34))
+    label_w = min(int(w * 0.3), int(max((text.measure(label, size_, True) for label, _ in rows),
+                                        default=0)) + 40)
+    y = top
+    for label, value in rows:
+        if y > bottom:
+            break               # a small window: the most important rows come first
+        text.add(label, (x, y), size_, SOFT, bold=True)
+        end = text.add(value, (x + label_w, y), size_, INK, max_width=right - x - label_w,
+                       max_lines=2)
+        line_y = int(max(y + row_h * 0.35, end + 4))
+        cv2.line(img, (x, line_y), (right, line_y), (220, 224, 228), 1, cv2.LINE_AA)
+        y = int(max(y + row_h, end + row_h * 0.62))
+
+    labels = view.get("answer_labels")
+    if labels:
+        _answer_row(img, text, h - 150, w / 2, labels)
+    text.add(view.get("footer", ""), (40, h - 30), 26, SOFT)
     return img

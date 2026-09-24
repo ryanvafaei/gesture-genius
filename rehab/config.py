@@ -24,6 +24,10 @@ REP_LOG_PATH = DATA_DIR / "reps.csv"
 HISTORY_PATH = DATA_DIR / "history.csv"
 SESSIONS_PATH = DATA_DIR / "sessions.csv"
 GARDEN_PATH = DATA_DIR / "garden.json"
+# "Delete my profile" (profile screen) moves her files here instead of erasing
+# them, so a therapist can still restore them. False erases them for good.
+KEEP_DELETED_PROFILE = True
+DELETED_PROFILES_DIR = DATA_DIR / "deleted"
 CONTENT_DIR = ROOT_DIR / "content"
 ASSETS_DIR = ROOT_DIR / "assets"
 FONT_REGULAR = ASSETS_DIR / "fonts" / "AtkinsonHyperlegible-Regular.ttf"
@@ -57,6 +61,13 @@ NUM_HANDS = 2
 MIN_HAND_DETECTION_CONFIDENCE = 0.5
 MIN_HAND_PRESENCE_CONFIDENCE = 0.5
 MIN_TRACKING_CONFIDENCE = 0.5
+
+# Screen: the window opens full screen (f toggles, --windowed starts in a
+# window) and the layout takes the screen's shape, so nothing falls off the
+# edge. DESIGN_HEIGHT is the height everything is drawn for before the
+# window scales it; the camera image is scaled to it.
+FULLSCREEN = True
+DESIGN_HEIGHT = 720
 
 # Quality checks
 MIN_HANDEDNESS_SCORE = 0.6

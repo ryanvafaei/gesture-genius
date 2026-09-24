@@ -221,7 +221,8 @@ class Feedback:
             nxt = (self.pick("Goodbye.next", plant=g("plant")) if g("plant")
                    else self.pick("Goodbye.next_no_garden"))
             return out + self._say(nxt, ev)
-        if t in ("ExerciseDone", "StartingPoint"):
+        if t in ("ExerciseDone", "StartingPoint", "ProfileOverview", "DeleteProfileQuestion",
+                 "ProfileKept", "ProfileDeleted"):
             return self._say(self.pick(t), ev)
         # TargetLowered, RangeGrew, NameChosen ...: said by nobody (lowering is silent)
         return []
@@ -263,6 +264,10 @@ class Feedback:
                     "message": f"{first.capitalize()} or {second}?", "yes_no": True,
                     "answer_labels": (self.pick("Card.plant_first", first=first),
                                       self.pick("Card.plant_second", second=second))}
+        if t == "DeleteProfileQuestion":
+            return {"title": self.pick("Card.DeleteProfileQuestion"),
+                    "message": self.pick("Card.DeleteProfileMessage"), "yes_no": True,
+                    "answer_labels": (self.pick("Card.delete_yes"), self.pick("Card.delete_no"))}
         if t == "ExerciseIntro":
             link = self.exercise_info(g("exercise")).get("links", {}).get(g("activity"), {})
             return {"title": g("title", ""), "message": link.get("sentence", ""),

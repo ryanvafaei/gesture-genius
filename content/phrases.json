@@ -83,5 +83,13 @@
   "Card.plant_second": ["Thumbs down: {second}"],
   "Card.intro_start": ["Thumbs up when you're ready"],
   "Card.garden_title": ["Your garden"],
-  "Card.summary_title": ["Today's session"]
+  "Card.summary_title": ["Today's session"],
+  "ProfileOverview": ["Here is what I remember about you."],
+  "DeleteProfileQuestion": ["Would you like to delete your profile and start again? Everything I remember about you will be removed. Press Y to delete it, or show thumbs down to keep it."],
+  "ProfileKept": ["All right, I'll keep your profile."],
+  "ProfileDeleted": ["Your profile has been deleted. Let's start again from the beginning."],
+  "Card.DeleteProfileQuestion": ["Delete your profile and start again?"],
+  "Card.DeleteProfileMessage": ["Your answers, hand measurements, progress and garden will be removed. Then I'll ask the first questions again."],
+  "Card.delete_yes": ["Y: yes, delete it"],
+  "Card.delete_no": ["Thumbs down or N: keep it"]
 }

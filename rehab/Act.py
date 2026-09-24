@@ -15,8 +15,13 @@ Speaker   non-blocking text-to-speech in its own thread, slow rate
 Display   camera image with the hand skeleton plus a side panel:
           a large bar with the target line, per-finger detail, the
           finger sequence, and big high-contrast text; full-screen cards,
-          the summary and the garden (see ui.py). Whatever is said is also
-          shown as a subtitle.
+          the summary, the garden and her profile (see ui.py). Cards, the
+          summary and the profile show a small camera image, so she can see
+          that her hand (and her thumbs up) is in view. Whatever is said is
+          also shown as a subtitle.
+          The window opens full screen and every screen is drawn in the
+          shape of the screen (see canvas_size), so nothing falls off the edge;
+          the window scales it to fit.
 """
 
 import collections
@@ -289,6 +294,49 @@ FINGER_STATE_COLORS = {"lagging": ORANGE, "target": CYAN, "active": GREEN}
 GAP_COLORS = {"index_middle": (80, 180, 255), "middle_ring": (120, 220, 120), "ring_pinky": (255, 150, 200)}
 
 PANEL_W = 420
+# full-screen pictures (ui.py); the camera screen is drawn here
+SCREENS = {"card": ui.card_screen, "summary": ui.summary_screen, "garden": ui.garden_screen,
+           "profile": ui.profile_screen}
+
+
+def screen_size():
+    """
+    (width, height) of the main screen, or None when it cannot be found.
+    Asked in a separate process: a second GUI toolkit in this process could
+    clash with OpenCV's window. Only the shape is used, so logical (HiDPI)
+    sizes are fine.
+    """
+    commands = [[sys.executable, "-c",
+                 "import tkinter as t; r = t.Tk(); r.withdraw(); "
+                 "print(r.winfo_screenwidth(), r.winfo_screenheight())"]]
+    if sys.platform == "darwin":
+        # no Dock icon, unlike tkinter
+        commands.insert(0, ["osascript", "-l", "JavaScript", "-e",
+                            'ObjC.import("AppKit"); var f = $.NSScreen.mainScreen.frame; '
+                            'f.size.width + " " + f.size.height'])
+    for cmd in commands:
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout.split()
+            w, h = int(float(out[0])), int(float(out[1]))
+        except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+            continue
+        if w >= 320 and h >= 240:
+            return w, h
+    return None
+
+
+def fit(frame, w, h, background=DARK):
+    """frame scaled to fit (w, h) without distortion, centred on the background."""
+    fh, fw = frame.shape[:2]
+    k = min(w / fw, h / fh)
+    nw, nh = max(1, int(round(fw * k))), max(1, int(round(fh * k)))
+    if (nw, nh) != (fw, fh):
+        frame = cv2.resize(frame, (nw, nh),
+                           interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR)
+    out = np.full((h, w, 3), background, np.uint8)
+    x0, y0 = (w - nw) // 2, (h - nh) // 2
+    out[y0:y0 + nh, x0:x0 + nw] = frame
+    return out
 
 
 # Text goes through a ui.TextLayer (Atkinson Hyperlegible via Pillow), drawn
@@ -304,6 +352,16 @@ def _text(img, text, org, scale=1.0, color=WHITE, thickness=2):
     dx = _LAYER["offsets"].get(id(img), 0)
     layer.add(text, (org[0] + dx, org[1]), int(scale * ui.FONT_PX_PER_SCALE), color,
               bold=thickness >= 2)
+
+
+def _fit_scale(text, width_px, scale, thickness=2):
+    """scale, made smaller when one line of text would be wider than width_px."""
+    layer = _LAYER["text"]
+    if layer is not None:
+        width = layer.measure(text, int(scale * ui.FONT_PX_PER_SCALE), thickness >= 2)
+    else:
+        width = cv2.getTextSize(text, FONT, scale, thickness)[0][0]
+    return scale if width <= width_px else scale * width_px / width
 
 
 def _band(img, y0, y1, alpha=0.6):
@@ -332,11 +390,33 @@ def _wrapped(img, text, x, y, width_px, scale=1.0, color=WHITE, thickness=2, lin
 
 class Display:
 
-    def __init__(self, window="Hand coach", character=None, feedback=None):
+    def __init__(self, window="Hand coach", character=None, feedback=None, screen=None,
+                 fullscreen=config.FULLSCREEN):
+        """screen: (width, height) whose shape every screen is drawn in; None = natural shape."""
         self.window = window
         self.character = character or {}
         self.feedback = feedback or Feedback()
+        self.screen = screen
+        self.fullscreen = fullscreen
+        self._opened = False
         self._cache = {}
+
+    def canvas_size(self, frame_shape):
+        """
+        (width, height) to draw in: the camera image at DESIGN_HEIGHT plus the
+        panel, grown in one direction to the screen's shape (the camera image
+        gets dark space around it instead of being cut). The window then scales
+        it to the screen, so it always fits.
+        """
+        fh, fw = frame_shape[:2]
+        h = config.DESIGN_HEIGHT
+        w = int(round(h * fw / fh)) + PANEL_W
+        if not self.screen:
+            return w, h
+        aspect = self.screen[0] / self.screen[1]
+        if aspect >= w / h:
+            return int(round(h * aspect)), h
+        return w, int(round(w / aspect))
 
     def _worded(self, kind, ev, fn):
         """Words for an event, worked out once (the same text she hears)."""
@@ -476,32 +556,36 @@ class Display:
     # --- whole screen -------------------------------------------------------
 
     def render(self, frame, view, features=None):
-        h, w = frame.shape[:2]
+        """The whole screen for this frame, in the shape of canvas_size()."""
+        cw, ch = self.canvas_size(frame.shape)
         view = self._words(view)
+        ex = view.get("exercise_display") or {}
+        self.draw_hand(frame, features, ex.get("finger_colors"))    # in the camera's pixels
         text = ui.TextLayer() if ui.pillow_available() else None
         screen = view.get("screen", "exercise")
-        if screen in ("card", "summary", "garden"):
-            draw = {"card": ui.card_screen, "summary": ui.summary_screen,
-                    "garden": ui.garden_screen}[screen]
+        if screen in SCREENS:
+            if screen != "garden":
+                view["camera"] = frame
             layer = text or ui.TextLayer()
-            canvas = draw((w + PANEL_W, h), view, layer, self.character)
+            canvas = SCREENS[screen]((cw, ch), view, layer, self.character)
             return layer.apply(canvas)
 
-        panel = np.full((h, PANEL_W, 3), DARK, dtype=np.uint8)
+        camera = fit(frame, cw - PANEL_W, ch)
+        panel = np.full((ch, PANEL_W, 3), DARK, dtype=np.uint8)
         _LAYER["text"] = text
-        _LAYER["offsets"] = {id(frame): 0, id(panel): w}
+        _LAYER["offsets"] = {id(camera): 0, id(panel): cw - PANEL_W}
         try:
-            canvas = self._render_camera(frame, panel, view, features)
+            canvas = self._render_camera(camera, panel, view)
         finally:
             _LAYER["text"] = None
             _LAYER["offsets"] = {}
         return text.apply(canvas) if text is not None else canvas
 
-    def _render_camera(self, frame, panel, view, features):
+    def _render_camera(self, frame, panel, view):
+        """frame: the camera column (the camera image with dark space around it)."""
         h, w = frame.shape[:2]
         ex = view.get("exercise_display") or {}
 
-        self.draw_hand(frame, features, ex.get("finger_colors"))
         if view.get("menu"):
             self._menu(frame, view["menu"])
 
@@ -560,7 +644,8 @@ class Display:
             _text(frame, view["quality"], (30, 55), 1.3, YELLOW, 3)
         elif view.get("subtitle"):
             _band(frame, 0, 70, 0.45)
-            _text(frame, view["subtitle"], (30, 48), 0.9, WHITE, 2)
+            _text(frame, view["subtitle"], (30, 48), _fit_scale(view["subtitle"], w - 60, 0.9),
+                  WHITE, 2)
 
         if view.get("paused"):
             if _LAYER["text"] is not None:
@@ -571,7 +656,30 @@ class Display:
 
         return np.hstack([frame, panel])
 
+    def _open(self):
+        """A window that scales its picture to fit (never cut off), full screen by default."""
+        flags = cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO | getattr(cv2, "WINDOW_GUI_NORMAL", 0)
+        cv2.namedWindow(self.window, flags)
+        if self.screen:
+            # the size it has when not full screen: most of the screen
+            k = min(0.9 * self.screen[0] / self._size[0], 0.85 * self.screen[1] / self._size[1])
+            cv2.resizeWindow(self.window, int(self._size[0] * k), int(self._size[1] * k))
+        self._opened = True
+        self.set_fullscreen(self.fullscreen)
+
+    def set_fullscreen(self, on):
+        self.fullscreen = on
+        if self._opened:
+            cv2.setWindowProperty(self.window, cv2.WND_PROP_FULLSCREEN,
+                                  cv2.WINDOW_FULLSCREEN if on else cv2.WINDOW_NORMAL)
+
+    def toggle_fullscreen(self):
+        self.set_fullscreen(not self.fullscreen)
+
     def show(self, canvas):
+        if not self._opened:
+            self._size = (canvas.shape[1], canvas.shape[0])
+            self._open()
         cv2.imshow(self.window, canvas)
 
     def close(self):
