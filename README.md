@@ -85,6 +85,7 @@ python main.py --exercise grip_release      # only this exercise, no menu (can b
 python main.py --video recording.mp4        # run on a recording instead of the webcam
 python main.py --video rec.mp4 --no-mirror  # a recording that is already mirrored
 python main.py --no-speech                  # print what the coach says instead of speaking
+python main.py --windowed                   # start in a window instead of full screen
 python -m pytest tests                      # tests (synthetic hands, no camera needed)
 ```
 
@@ -110,6 +111,9 @@ hand counts; hold the gesture for a moment.
 | `1`–`6` | in the menu: pick one exercise |
 | `0` or space | in the menu: all of today's exercises |
 | `7` | in the menu: finish for today |
+| `8` or `p` | in the menu: my profile (what the coach remembers) |
+| `d`, then `y` | on the profile screen: delete the profile and start again from the first questions |
+| `f` | full screen on / off |
 | ↑ / ↓ | in the menu: move the highlight |
 | `m` | back to the menu at any time |
 | `q` or Esc | stop (everything done so far is kept) |
@@ -132,7 +136,7 @@ greeting → check-in → menu or today's plan → [activity card → calibratio
    "let's start gently" and targets start two steps lower.
 3. **Check-in:** "How is your hand feeling today?" A thumbs down switches on difficult day mode.
    No answer within 25 s means a normal day.
-4. **Menu:** one exercise, all of today's exercises, or "Finish for today". With `--exercise`
+4. **Menu:** one exercise, all of today's exercises, "Finish for today", or "My profile". With `--exercise`
    there is no menu, only "Today we'll do one exercise." Grip squeeze (strengthening) is planned
    only every other day.
 5. **Each exercise:**
@@ -246,6 +250,19 @@ words she hears.
   and target line, per-finger bars, the finger sequence and big high-contrast text;
 - full-screen cards for questions, activities, the summary and the garden, with the coach's face;
 - a menu with large numbered items.
+- **her profile** (menu item 8 or `p`): everything the coach remembers (her name, trained hand,
+  the coach's name and favourite activities she chose, when she started, sessions, measured
+  exercises, personal bests, practice per activity, the garden). `d` asks whether to delete it;
+  only the `y` key confirms (thumbs down, `n` or waiting keeps it). After deleting, the app starts
+  again from the first-time questions.
+
+The window opens **full screen** (`f` switches, `--windowed` starts in a window). Every screen is
+drawn in the shape of the screen and the window scales it to fit, so nothing falls off the edge on
+any screen size: the camera image gets dark space around it rather than being cut, and the
+spoken subtitle shrinks to fit. Cards, the summary and the profile show her **camera image**
+small, so she can check that her hand is in view while answering: the border turns green and a
+bar fills while a thumbs up is held, and a line underneath says what the coach sees ("I can see
+your hand", "Thumbs up - hold it there", "Now lower your hand", ...).
 
 Text uses Pillow with Atkinson Hyperlegible (`assets/fonts`, SIL Open Font License), a font made
 for low vision. Each line is rendered once and reused, so drawing a frame stays at about 2 ms.
@@ -274,6 +291,11 @@ renamed, so a crash never leaves half a file. An unreadable file is set aside
 (`*.broken-<time>`), and the coach starts as on a first day rather than remembering something
 wrong. Older data files are upgraded automatically (new CSV columns, `thresholds` → `targets`).
 
+**Deleting the profile** (profile screen, `d` then `y`) removes `profile.json`, `garden.json`,
+`reps.csv`, `history.csv` and `sessions.csv` together. By default they are moved to
+`data/deleted/<time>/`, so a therapist can still put them back; set `KEEP_DELETED_PROFILE = False`
+in `rehab/config.py` to erase them for good.
+
 ---
 
 ## Changing settings and wording
@@ -281,6 +303,8 @@ wrong. Older data files are upgraded automatically (new CSV columns, `thresholds
 - **`rehab/config.py`**: everything a therapist might want to change: the trained hand, camera,
   sets, reps, thresholds, hold times, rest times, target steps, difficult-day rules, milestones
   and garden size. `AUTO_PROGRESSION = False` stops the app from changing targets by itself.
+  `FULLSCREEN` and `DESIGN_HEIGHT` set how the window opens; `KEEP_DELETED_PROFILE` whether a
+  deleted profile is kept as a backup.
 - **`content/phrases.json`**: every sentence the coach says, grouped by event.
 - **`content/character.json`**: the coach's name options, personality rules and face colours.
   Set `"name"` to fix the name instead of letting her choose.
@@ -327,7 +351,7 @@ pip install pytest
 python -m pytest tests
 ```
 
-The 112 tests need no camera or speaker. `tests/synthetic_hand.py` builds a 3D hand in any pose,
+The 133 tests need no camera or speaker. `tests/synthetic_hand.py` builds a 3D hand in any pose,
 so exercises, calibration, whole sessions, speech priority, the motivation rules, storage and the
 text-to-speech backend choice are all tested with made-up hands.
 

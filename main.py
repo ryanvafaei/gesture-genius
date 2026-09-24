@@ -5,6 +5,7 @@ Hand rehabilitation coach for Eleanor.
     python main.py --exercise grip_release  one exercise (repeatable)
     python main.py --video test.mp4         run on a recording instead of the webcam
     python main.py --no-speech              print instead of speaking
+    python main.py --windowed               in a window instead of full screen
 
 It opens with a greeting and a check-in ("How is your hand feeling today?"),
 answered with thumbs up / thumbs down (or space = yes, n = no). Without
@@ -13,7 +14,8 @@ pick one exercise, space for all of today's exercises, or "Finish for today"
 to see the garden and say goodbye.
 
 Keys: space = start / pause / continue, y / n = yes / no, m = back to the
-menu, q or Esc = stop (what was done is kept).
+menu, p = her profile (from the menu; d there deletes it and starts again),
+f = full screen on / off, q or Esc = stop (what was done is kept).
 
 Wiring only: Sense -> features -> Think (Coach + SessionManager) -> Act.
 Nothing imports this file.
@@ -24,7 +26,7 @@ import argparse
 import cv2
 
 from rehab import config, features, storage
-from rehab.Act import Display, SilentSpeaker, Speaker
+from rehab.Act import Display, SilentSpeaker, Speaker, screen_size
 from rehab.exercises import EXERCISES
 from rehab.feedback import Feedback
 from rehab.filters import FeatureFilter
@@ -41,6 +43,8 @@ def parse_args():
     p.add_argument("--no-speech", action="store_true")
     p.add_argument("--no-mirror", action="store_true",
                    help="for recordings that are already mirrored")
+    p.add_argument("--windowed", action="store_true",
+                   help="open in a window instead of full screen (f switches)")
     return p.parse_args()
 
 
@@ -66,21 +70,33 @@ def key_name(code):
 
 def main():
     args = parse_args()
-
     sense = Sense(args.video if args.video else args.camera,
                   mirror=not args.no_mirror)
+    display = Display(screen=screen_size(),
+                      fullscreen=config.FULLSCREEN and not args.windowed)
+    try:
+        # a new session after her profile was deleted: the first questions again
+        while run_session(args, sense, display):
+            pass
+    finally:
+        sense.close()
+        display.close()
+
+
+def run_session(args, sense, display):
+    """One session, from the greeting to goodbye. True: start again with a new profile."""
     profile = storage.load_profile()
     character = storage.load_content("character")
     feedback = Feedback(name=profile["name"], coach=profile.get("coach_name"))
     speaker = (SilentSpeaker(echo=True, feedback=feedback) if args.no_speech else
                Speaker(rate=profile.get("voice_rate", config.SPEECH_RATE),
                        voice=profile.get("voice"), feedback=feedback))
-    display = Display(character=character, feedback=feedback)
+    display.character, display.feedback = character, feedback
     log = storage.SessionLog()
     session = SessionManager(speaker, profile, log, exercises=args.exercise,
                              save_profile=storage.save_profile,
                              garden=storage.load_garden(), save_garden=storage.save_garden,
-                             character=character)
+                             character=character, delete_profile=storage.delete_profile)
     smoother = FeatureFilter(config.ONE_EURO_MIN_CUTOFF, config.ONE_EURO_BETA,
                              config.ONE_EURO_D_CUTOFF)
     hand = profile.get("affected_hand", config.AFFECTED_HAND)
@@ -90,7 +106,7 @@ def main():
         while not session.done:
             frame, t = sense.read()
             if frame is None:
-                break
+                return False
 
             # Sense
             observations = sense.observe(frame, t)
@@ -106,14 +122,15 @@ def main():
             display.show(display.render(frame, session.view(), f))
             key = key_name(cv2.waitKeyEx(1))
             if key == "q":
-                break
-            if key:
+                return False
+            if key == "f":
+                display.toggle_fullscreen()
+            elif key:
                 session.on_key(key, t)
+        return session.restart
     finally:
         session.stop(t)
         speaker.close()
-        sense.close()
-        display.close()
 
 
 if __name__ == "__main__":

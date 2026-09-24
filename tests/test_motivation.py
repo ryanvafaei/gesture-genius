@@ -568,3 +568,36 @@ def test_screens_render(tmp_path):
     for v in views:
         out = display.render(frame.copy(), v)
         assert out.shape == (720, 1280 + 420, 3) and out.std() > 0
+
+
+def test_screens_take_the_screen_shape():
+    """Drawn in the screen's shape, so the window can scale it without cutting anything off."""
+    from rehab.Act import PANEL_W, Display
+    frame = np.zeros((720, 1280, 3), np.uint8)
+    for screen, size in (((1710, 1107), (1700, 1101)), ((1920, 1080), (1700, 956)),
+                         ((3440, 1440), (1720, 720))):
+        display = Display(character=storage.load_content("character"), screen=screen)
+        assert display.canvas_size(frame.shape) == size
+        for v in ({"stage": "rest", "countdown": 3, "progress": 0.5},
+                  {"screen": "card", "card_event": event("CheckIn"),
+                   "gesture": {"hand": True, "answer": "yes", "progress": 0.5}},
+                  {"screen": "profile", "title": "Your profile",
+                   "profile_rows": [("Name", "Eleanor")] * 10,
+                   "answer_labels": ("Thumbs up or Space: back", "D: delete my profile")}):
+            out = display.render(frame.copy(), v)
+            assert out.shape == (size[1], size[0], 3) and out.std() > 0
+    # a camera with another resolution is scaled to the same design height
+    display = Display()
+    assert display.canvas_size((1080, 1920)) == (1280 + PANEL_W, 720)
+
+
+def test_yes_no_state_for_the_preview():
+    from rehab.Think import YesNo
+    yn = YesNo(hold_s=1.0)
+    assert yn.state(0.0) == (None, 0.0)
+    yn.update([], 0.0)                               # hand down: ready
+    yn.update([(config.YES_GESTURE, 0.9)], 0.1)
+    yn.update([(config.YES_GESTURE, 0.9)], 0.6)
+    assert yn.state(0.6) == ("yes", 0.5)
+    assert yn.update([(config.YES_GESTURE, 0.9)], 1.2) == "yes"
+    assert yn.state(1.2)[0] == "lower"               # still up after answering

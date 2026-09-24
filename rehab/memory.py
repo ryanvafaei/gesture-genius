@@ -10,6 +10,8 @@ starts gently (and the targets start lower, see progress.start_target).
 from rehab import config
 from rehab.events import event
 from rehab.progress import days_since
+from rehab.feedback import join_words
+from rehab.storage import valid_date
 
 
 def greeting(profile, today):
@@ -55,3 +57,54 @@ def activity_for(exercise, profile, activities):
     linked = activities.get("exercises", {}).get(exercise, {}).get("activities", [])
     chosen = [a for a in linked if a in profile.get("chosen_activities", [])]
     return (chosen or linked or [None])[0]
+
+
+def long_date(d):
+    """date -> "24 September 2026" (same on every OS)."""
+    return f"{d.day} {d.strftime('%B %Y')}"
+
+
+def profile_overview(profile, garden, sessions, activities):
+    """
+    Everything the coach remembers about her, as (label, value) rows for the
+    profile screen: her answers to the first-time questions first, then what
+    was saved since. sessions: the rows of sessions.csv.
+    """
+    names = activities.get("activities", {})
+
+    def activity(a):
+        return names.get(a, {}).get("name", a)
+
+    chosen = [activity(a) for a in profile.get("chosen_activities", [])]
+    started = valid_date(profile.get("created"))
+    last = profile.get("last_session") or {}
+    last_date = valid_date(last.get("date"))
+    count = len(sessions)
+    if count:
+        sessions_text = str(count) + (f", the last on {long_date(last_date)}" if last_date else "")
+    else:
+        sessions_text = "None yet"
+    measured = len(profile.get("calibration", {}))
+    bests = sum(len(m) for m in profile.get("personal_bests", {}).values() if isinstance(m, dict))
+    practice = sorted(((activity(a), int(n)) for a, n in profile.get("practice", {}).items()
+                       if isinstance(n, (int, float)) and n > 0), key=lambda p: -p[1])
+    plots = garden.get("plots", [])
+    garden_text = ("No plants yet" if not plots else
+                   f"{len(plots)} plant{'s' if len(plots) != 1 else ''}"
+                   f", flowering: {sum(1 for p in plots if p.get('stage') == config.GARDEN_STAGES - 1)}")
+    if garden.get("season", 1) > 1:
+        garden_text += f", season {garden['season']}"
+    return [
+        ("Name", profile.get("name") or config.USER_NAME),
+        ("Hand we train", profile.get("affected_hand") or config.AFFECTED_HAND),
+        ("Your coach", profile.get("coach_name") or "Not chosen yet"),
+        ("Favourite activities", join_words(chosen) if chosen else "Not chosen yet"),
+        ("Profile started", long_date(started) if started else "Unknown"),
+        ("Sessions", sessions_text),
+        ("Hand measured", f"For {measured} of {len(config.SESSION_ORDER)} exercises"
+                          if measured else "Not yet"),
+        ("Personal bests", str(bests) if bests else "None yet"),
+        ("Practice", ", ".join(f"{name}: {n} rep{'s' if n != 1 else ''}" for name, n in practice[:3])
+                     if practice else "None yet"),
+        ("Garden", garden_text),
+    ]

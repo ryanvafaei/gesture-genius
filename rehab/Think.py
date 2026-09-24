@@ -31,6 +31,11 @@ Yes / no answers: thumbs up / thumbs down (either hand), with space or "y"
 and "n" as a backup. Space starts, pauses and continues; in the menu a
 number picks an exercise and up/down move the highlight; m goes back to the
 menu.
+
+Profile (menu item "My profile", or p in the menu): what the coach remembers
+about her. d asks whether to delete it; only the y key confirms (a thumbs up
+there could be an accident). After deleting, the session ends with
+`restart` set, and main starts again as on her first day.
 """
 
 from datetime import datetime
@@ -57,11 +62,14 @@ SUMMARY_S = 6.0
 
 ALL = "all"
 FINISH = "finish"
+PROFILE = "profile"
 
 QUESTION_STAGES = ("setup_name", "setup_activities", "check_in", "plant_choice")
 CARD_STAGES = QUESTION_STAGES + ("greeting", "today_plan", "intro", "goodbye")
 # stages where a thumbs up means "carry on"
 CONTINUE_STAGES = ("greeting", "today_plan", "intro", "rest", "summary", "garden", "goodbye")
+# her profile and the question whether to delete it
+PROFILE_STAGES = ("profile", "profile_delete")
 
 
 class YesNo:
@@ -74,6 +82,7 @@ class YesNo:
     def __init__(self, hold_s=config.GESTURE_HOLD_S, min_score=config.GESTURE_MIN_SCORE):
         self.hold_s = hold_s
         self.min_score = min_score
+        self._seen = None
         self.reset()
 
     def reset(self):
@@ -85,6 +94,7 @@ class YesNo:
         labels = [g for g, score in gestures or []
                   if g in (config.YES_GESTURE, config.NO_GESTURE) and (score or 0) >= self.min_score]
         label = labels[0] if labels else None
+        self._seen = label
         if label is None:
             self._armed = True
             self._label = None
@@ -98,6 +108,21 @@ class YesNo:
             self.reset()
             return "yes" if label == config.YES_GESTURE else "no"
         return None
+
+    def state(self, now):
+        """
+        For the camera preview: (answer, progress 0..1). answer is "yes" / "no"
+        while a thumb is being held, "lower" when the hand has to come down
+        before the next answer, else None.
+        """
+        if self._seen is None:
+            return None, 0.0
+        if not self._armed:
+            return "lower", 0.0
+        if self._label is None:
+            return None, 0.0
+        answer = "yes" if self._label == config.YES_GESTURE else "no"
+        return answer, min(1.0, max(0.0, (now - self._since) / self.hold_s))
 
 
 class Coach:
@@ -181,13 +206,15 @@ class Coach:
 class SessionManager:
 
     def __init__(self, speaker, profile, log, exercises=None, save_profile=None,
-                 garden=None, save_garden=None, character=None, activities=None):
+                 garden=None, save_garden=None, character=None, activities=None,
+                 delete_profile=None):
         self.speaker = speaker
         self.profile = profile
         self.log = log
         self.save_profile = save_profile or (lambda p: None)
         self.garden = garden if garden is not None else new_garden()
         self.save_garden = save_garden or (lambda g: None)
+        self.delete_profile = delete_profile or (lambda: None)
         self.character = character if character is not None else load_content("character")
         self.activities = activities if activities is not None else load_content("activities")
         self.progress = SessionProgress(profile, log)
@@ -197,12 +224,15 @@ class SessionManager:
         # chosen explicitly: no day schedule and no menu
         self.fixed = bool(exercises)
         self.plan = list(exercises) if exercises else []
-        self.menu = [ALL] + list(config.SESSION_ORDER) + [FINISH]
+        self.menu = [ALL] + list(config.SESSION_ORDER) + [FINISH, PROFILE]
         self.menu_index = 0
         self.index = -1
         self.stage = "start"
         self.paused = False
         self.done = False
+        self.restart = False            # her profile was deleted: start again from the beginning
+        self._profile_rows = []
+        self._hand_seen = False
         self.summaries = []
         self.summary_lines = []
         self.exercise = None
@@ -310,12 +340,17 @@ class SessionManager:
     # --- keys -------------------------------------------------------------------
 
     def on_key(self, key, now):
-        """key: " ", "up", "down", "m", "y", "n" or a digit."""
+        """key: " ", "up", "down", "m", "p", "d", "y", "n" or a digit."""
         self._handle(self._on_key, key, now)
 
     def _on_key(self, key, now):
         if self.stage == "menu":
             self._menu_key(key, now)
+            return
+        if self.stage in PROFILE_STAGES:
+            self._profile_key(key, now)
+            return
+        if self.stage == "profile_deleted":
             return
         if self.stage in QUESTION_STAGES:
             if key in (" ", "y", "n"):
@@ -377,13 +412,15 @@ class SessionManager:
 
     def _update(self, f, now, gestures):
         self._t = now
+        seen = self._gestures(f, gestures)
+        self._hand_seen = bool(seen) or bool(f is not None and getattr(f, "present", False))
         if self.paused or self.done:
             return
         if self.speaker.busy:
             self._quiet_t = now
         answer = None
-        if self.stage in QUESTION_STAGES + CONTINUE_STAGES:
-            answer = self.yes_no.update(self._gestures(f, gestures), now)
+        if self.stage in QUESTION_STAGES + CONTINUE_STAGES + PROFILE_STAGES:
+            answer = self.yes_no.update(seen, now)
         stage = self.stage
         if stage == "start":
             self._begin(now)
@@ -394,6 +431,16 @@ class SessionManager:
                 self._answer(answer == "yes", now)
             elif self._quiet_for(now) >= timeout:
                 self._answer(None, now)
+        elif stage == "profile":
+            if answer == "yes":
+                self._open_menu(now)
+        elif stage == "profile_delete":
+            # only the y key deletes; thumbs down or no answer keeps her profile
+            if answer == "no" or self._quiet_for(now) >= config.QUESTION_TIMEOUT_S:
+                self._keep_profile(now)
+        elif stage == "profile_deleted":
+            if self._quiet_for(now) >= config.CARD_PAUSE_S:
+                self.done = True
         elif answer == "yes":
             self._continue(now)
         elif stage in ("greeting", "today_plan"):
@@ -565,10 +612,15 @@ class SessionManager:
         elif key.isdigit() and int(key) < len(self.menu):
             self.menu_index = int(key)
             self._choose(self.menu[self.menu_index], now)
+        elif key == "p":
+            self._choose(PROFILE, now)
 
     def _choose(self, item, now):
         if item == FINISH:
             self._finish_session(now)
+            return
+        if item == PROFILE:
+            self._open_profile(now)
             return
         self._from_all = item == ALL
         self.plan = list(self.today) if item == ALL else [item]
@@ -589,6 +641,45 @@ class SessionManager:
         self._after_rest = None
         self._say("Let's choose another exercise.")
         self._open_menu(now)
+
+    # --- profile ----------------------------------------------------------------------
+
+    def _open_profile(self, now):
+        """What the coach remembers about her, with the option to delete it."""
+        self._profile_rows = memory.profile_overview(self.profile, self.garden,
+                                                     self.log.sessions(), self.activities)
+        self.speaker.clear()
+        self.speaker.say(event("ProfileOverview"))
+        self._enter("profile", now)
+
+    def _profile_key(self, key, now):
+        if self.stage == "profile":
+            if key == "d":
+                self._card(event("DeleteProfileQuestion"), "profile_delete", now)
+            elif key in (" ", "y", "m", "p"):
+                self._open_menu(now)
+        elif key == "y":
+            self._delete(now)
+        elif key in ("n", " ", "m"):
+            self._keep_profile(now)
+
+    def _keep_profile(self, now):
+        self.speaker.clear()
+        self.speaker.say(event("ProfileKept"))
+        self._enter("profile", now)
+
+    def _delete(self, now):
+        """
+        Delete her profile, garden and history. Nothing of this session is
+        saved any more; the session ends and main starts again from the first
+        questions.
+        """
+        self._ended = True
+        self.save_profile = self.save_garden = lambda _: None
+        self.delete_profile()
+        self.restart = True
+        self.speaker.clear()
+        self._card(event("ProfileDeleted"), "profile_deleted", now)
 
     # --- flow -------------------------------------------------------------------------
 
@@ -867,6 +958,8 @@ class SessionManager:
                 "intro", "calibration_offer", "calibrating", "exercise", "rest") else None,
             "difficult_day": self.progress.difficult,
         }
+        answer, progress = self.yes_no.state(self._t)
+        v["gesture"] = {"hand": self._hand_seen, "answer": answer, "progress": progress}
         if not self.fixed and self.stage not in ("start", "menu"):
             v["footer"] = "Space: pause / continue   M: menu"
         if self.stage in CARD_STAGES:
@@ -918,8 +1011,22 @@ class SessionManager:
             v["menu"] = [{
                 "key": str(i),
                 "text": ("All of today's exercises" if item == ALL else
-                         "Finish for today" if item == FINISH else EXERCISES[item].title),
+                         "Finish for today" if item == FINISH else
+                         "My profile" if item == PROFILE else EXERCISES[item].title),
                 "selected": i == self.menu_index,
-                "note": "" if item in (ALL, FINISH) or item in self.today else "not today",
+                "note": "" if item in (ALL, FINISH, PROFILE) or item in self.today else "not today",
             } for i, item in enumerate(self.menu)]
+        elif self.stage == "profile":
+            coach = self.profile.get("coach_name")
+            v["screen"] = "profile"
+            v["title"] = "Your profile"
+            v["message"] = f"What {coach or 'your coach'} remembers about you."
+            v["profile_rows"] = self._profile_rows
+            v["answer_labels"] = ("Thumbs up or Space: back", "D: delete my profile")
+            v["footer"] = "Space or M: back to the menu   D: delete my profile and start again"
+        elif self.stage in ("profile_delete", "profile_deleted"):
+            v["screen"] = "card"
+            v["card_event"] = self._card_event
+            v["footer"] = ("Y: delete   N, Space or thumbs down: keep"
+                           if self.stage == "profile_delete" else "")
         return v

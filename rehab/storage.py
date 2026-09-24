@@ -12,6 +12,9 @@ history.csv    one row per exercise per session, used for progress
 sessions.csv   one row per session (check-in, difficult day, highlight, notes)
 garden.json    the garden: plots, waterings, bees and butterflies
 
+delete_profile() removes all of these at once (moved to data/deleted/<time>/
+unless KEEP_DELETED_PROFILE is off), so the coach starts as on a first day.
+
 profile.json, garden.json and sessions.csv are written to a temporary file
 first and then renamed, so a crash cannot leave a half-written file. A file
 that cannot be read is set aside (renamed *.broken-<time>) and the program
@@ -150,6 +153,33 @@ def load_profile(path=config.PROFILE_PATH):
 
 def save_profile(profile, path=config.PROFILE_PATH):
     _write_json(profile, path)
+
+
+# everything that belongs to her: removed together when she starts over
+PROFILE_FILES = (config.PROFILE_PATH, config.GARDEN_PATH, config.REP_LOG_PATH,
+                 config.HISTORY_PATH, config.SESSIONS_PATH)
+
+
+def delete_profile(paths=PROFILE_FILES, keep_backup=config.KEEP_DELETED_PROFILE,
+                   backup_dir=config.DELETED_PROFILES_DIR):
+    """
+    Forget her: profile, garden and history, so the next start is a first day.
+    With keep_backup the files are moved to backup_dir/<time>/ (a therapist can
+    still put them back); otherwise they are erased. Returns the backup folder,
+    or None when nothing was kept.
+    """
+    existing = [Path(p) for p in paths if Path(p).is_file()]
+    if not existing:
+        return None
+    if not keep_backup:
+        for path in existing:
+            path.unlink(missing_ok=True)
+        return None
+    folder = Path(backup_dir) / datetime.now().strftime("%Y%m%d-%H%M%S")
+    folder.mkdir(parents=True, exist_ok=True)
+    for path in existing:
+        path.replace(folder / path.name)
+    return folder
 
 
 # ---------------------------------------------------------------------------

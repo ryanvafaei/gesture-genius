@@ -249,8 +249,8 @@ def test_menu_number_picks_one_exercise(log):
     assert s.stage == "menu"
     items = s.view()["menu"]
     assert items[0]["text"] == "All of today's exercises" and items[0]["selected"]
-    assert [i["key"] for i in items] == [str(i) for i in range(len(config.SESSION_ORDER) + 2)]
-    assert items[-1]["text"] == "Finish for today"
+    assert [i["key"] for i in items] == [str(i) for i in range(len(config.SESSION_ORDER) + 3)]
+    assert items[-2]["text"] == "Finish for today" and items[-1]["text"] == "My profile"
     number = config.SESSION_ORDER.index("thumb_flexion") + 1
     s.on_key(str(number), clock.t)
     assert s.stage == "intro" and s.plan == ["thumb_flexion"]
@@ -259,7 +259,7 @@ def test_menu_number_picks_one_exercise(log):
 
 def test_menu_arrows_and_space(log):
     s, clock = _menu_session(log)
-    s.on_key("up", clock.t)                   # wraps to the last exercise
+    s.on_key("up", clock.t)                   # wraps to the last item
     assert s.view()["menu"][-1]["selected"]
     s.on_key("down", clock.t)
     s.on_key("down", clock.t)
@@ -296,3 +296,81 @@ def test_menu_back_and_after_summary(log, monkeypatch):
     assert log.history("grip_release")[0]["reps_done"] == "1"
     s.on_key(" ", clock.t)
     assert s.stage == "menu" and not s.done
+
+
+# --- profile ---------------------------------------------------------------------
+
+def test_profile_screen_shows_what_is_remembered(log):
+    s, clock = _menu_session(log)
+    s.on_key("p", clock.t)
+    assert s.stage == "profile"
+    v = s.view()
+    assert v["screen"] == "profile"
+    rows = dict(v["profile_rows"])
+    assert rows["Your coach"] == "Iris"
+    assert rows["Favourite activities"] == "making tea, gardening and reading"
+    s.on_key(" ", clock.t)                    # back
+    assert s.stage == "menu"
+    s.on_key(str(len(s.menu) - 1), clock.t)   # the menu item
+    assert s.stage == "profile"
+
+
+def test_profile_delete_needs_the_y_key(log):
+    deleted = []
+    s, clock = _menu_session(log, delete_profile=lambda: deleted.append(True))
+    s.on_key("p", clock.t)
+    s.on_key("d", clock.t)
+    assert s.stage == "profile_delete"
+    s.on_key("n", clock.t)                    # keep it
+    assert s.stage == "profile" and not deleted
+    s.on_key("d", clock.t)
+    for _ in range(60):                       # a thumbs up does not delete ...
+        t = clock.tick()
+        s.update(feat(t), t, gestures=[(config.YES_GESTURE, 0.9)])
+    assert s.stage == "profile_delete" and not deleted
+    s.update(feat(clock.tick()), clock.t, gestures=[])       # hand down
+    for _ in range(30):                       # ... a thumbs down keeps it
+        t = clock.tick()
+        s.update(feat(t), t, gestures=[(config.NO_GESTURE, 0.9)])
+    assert s.stage == "profile" and not deleted
+
+
+def test_profile_delete_restarts_without_saving(log):
+    saved, deleted = [], []
+    s, clock = _menu_session(log, save_profile=lambda p: saved.append(dict(p)),
+                             delete_profile=lambda: deleted.append(True))
+    s.on_key("p", clock.t)
+    s.on_key("d", clock.t)
+    s.on_key("y", clock.t)
+    assert deleted == [True] and s.restart and s.stage == "profile_deleted"
+    before = len(saved)
+    for _ in range(90):
+        t = clock.tick()
+        s.update(feat(t), t)
+    assert s.done
+    s.stop(clock.t)                           # nothing is written back after deleting
+    assert len(saved) == before
+    assert log.sessions() == []
+
+
+def test_delete_profile_files(tmp_path):
+    files = [tmp_path / "profile.json", tmp_path / "garden.json", tmp_path / "history.csv"]
+    for f in files:
+        f.write_text("{}")
+    backup = storage.delete_profile(files + [tmp_path / "missing.csv"], keep_backup=True,
+                                    backup_dir=tmp_path / "deleted")
+    assert not any(f.exists() for f in files)
+    assert sorted(p.name for p in backup.iterdir()) == ["garden.json", "history.csv",
+                                                       "profile.json"]
+    files[0].write_text("{}")
+    assert storage.delete_profile(files, keep_backup=False) is None
+    assert not files[0].exists()
+    assert storage.load_profile(files[0])["coach_name"] is None      # a first day again
+
+
+def test_profile_overview_first_day():
+    from rehab import memory
+    rows = dict(memory.profile_overview(storage.new_profile(), storage.new_garden(), [],
+                                        storage.load_content("activities")))
+    assert rows["Your coach"] == "Not chosen yet"
+    assert rows["Sessions"] == "None yet" and rows["Garden"] == "No plants yet"
