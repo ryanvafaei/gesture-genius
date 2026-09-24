@@ -16,13 +16,14 @@ from dataclasses import dataclass, field
 
 PRIORITY = {
     # 1: safety and setup
-    "HandLost": 1, "WrongHand": 1,
+    "HandLost": 1, "WrongHand": 1, "SafetyStop": 1,
     # 2: instructions and the session flow
     "StepInstruction": 2, "ExerciseIntro": 2,
     "NameQuestion": 2, "NameChosen": 2, "Greeting": 2, "ActivityQuestion": 2,
     "ActivitiesChosen": 2, "CheckIn": 2, "CheckInAnswer": 2, "DifficultDayStarted": 2,
     "TodayPlan": 2, "ExerciseDone": 2, "StartingPoint": 2, "Summary": 2,
     "PlantQuestion": 2, "GardenGrew": 2, "Goodbye": 2, "SetCompleted": 2, "NotTestable": 2,
+    "RatingQuestion": 2, "RatingThanks": 2,
     # 3: bests and milestones
     "PersonalBest": 3, "TargetRaised": 3, "MilestoneReached": 3,
     "BenchmarkMilestone": 3, "LevelRaised": 3, "AssessmentImproved": 3,

@@ -152,6 +152,10 @@ def test_full_session_one_exercise(tmp_path, log, monkeypatch):
     assert "I've saved today as your starting point." in [m.text for m in speaker.spoken]
     assert speaker.chimes == 4
     s.on_key(" ", clock.t)
+    assert s.stage == "rating"                # how was it? 1-5, before the garden
+    s.on_key("2", clock.t)                    # how hard
+    assert s.stage == "rating"
+    s.on_key("5", clock.t)                    # how enjoyable
     assert s.stage == "plant_choice"          # the first seed: she picks the plant
     s.on_key("y", clock.t)
     assert s.stage == "garden"
@@ -166,6 +170,8 @@ def test_full_session_one_exercise(tmp_path, log, monkeypatch):
     session = log.sessions()[0]
     assert session["total_reps"] == "4" and session["difficult_day"] == "no"
     assert session["check_in"] == "good" and session["garden"] == "rose:0"
+    assert session["exertion"] == "2" and session["enjoyment"] == "5"
+    assert session["safety_stop"] == "no" and session["ease"] == ""
     last = profile["last_session"]
     assert last["date"] == date.today().isoformat() and last["exercises"] == ["grip_release"]
     assert profile["targets"]["grip_release"]["high"] > config.EXERCISES["grip_release"]["high"]
@@ -269,7 +275,8 @@ def test_menu_number_picks_one_exercise(log):
     assert s.stage == "menu"
     items = s.view()["menu"]
     assert items[0]["text"] == "All of today's exercises" and items[0]["selected"]
-    assert [i["key"] for i in items] == [str(i) for i in range(len(config.SESSION_ORDER) + 4)]
+    assert [i["key"] for i in items] == [str(i) for i in range(len(config.SESSION_ORDER) + 1)] + [
+        "A", "E", "P"]
     assert items[-3]["text"] == "Arm exercises"
     assert items[-2]["text"] == "Finish for today" and items[-1]["text"] == "My profile"
     number = config.SESSION_ORDER.index("thumb_flexion") + 1
@@ -332,7 +339,7 @@ def test_profile_screen_shows_what_is_remembered(log):
     assert rows["Favourite activities"] == "making tea, gardening and reading"
     s.on_key(" ", clock.t)                    # back
     assert s.stage == "menu"
-    s.on_key(str(len(s.menu) - 1), clock.t)   # the menu item
+    s.on_key("p", clock.t)                    # the menu item
     assert s.stage == "profile"
 
 

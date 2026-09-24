@@ -102,7 +102,7 @@ class BodyFeatures:
                 out.append(n)
         return out
 
-    def quality_problem(self, need_palm_facing=False):
+    def quality_problem(self, need_palm_facing=False, **_):
         """Like HandFeatures.quality_problem: only "no_body" here; exercises check their own landmarks."""
         return None if self.present else "no_body"
 

@@ -66,7 +66,7 @@ class Say:
     mood      face the coach shows while saying it (neutral, happy, encouraging)
     """
     text: str
-    kind: str = "instruction"     # instruction | count | praise | hint | quality | chime
+    kind: str = "instruction"     # instruction | count | praise | hint | quality | chime | note
     valid: callable = field(default=None, repr=False, compare=False)
     optional: bool = False
     priority: int = None
@@ -74,6 +74,7 @@ class Say:
     mood: str = None
     queued_at: float = field(default=None, repr=False, compare=False)
     seq: int = field(default=None, repr=False, compare=False)   # order given to the speaker
+    note: int = None              # kind "note": which note of the tune (finger piano)
 
     KIND_PRIORITY = {"quality": 1, "instruction": 2, "hint": 2, "praise": 5, "count": 5, "chime": 5}
 
@@ -102,6 +103,7 @@ class CalibrationStep:
     extract: callable
     need_palm_facing: bool = False
     screen_text: str = None
+    need_both_hands: bool = False
 
 
 @dataclass
@@ -248,6 +250,10 @@ class Exercise:
     # One short sentence each, said one at a time before the first set.
     instructions = ()
     need_palm_facing = False
+    need_both_hands = False     # the other hand has to be in view too
+    any_hand = False            # either hand will do (e.g. pointing)
+    need_hand = True            # False: works without a hand in view (keys)
+    uses_level = False          # a level kept in her profile (sequences, games)
     # How the progress message describes an improvement of raw_high.
     progress_phrase = "You moved {pct}% further than {when}."
     # "lower is better" for the summary number (e.g. time per touch)
@@ -312,7 +318,11 @@ class Exercise:
 
     def quality_problem(self, f):
         """Tracking problem as a short key (see Think.QUALITY_TEXT), or None."""
-        return f.quality_problem(self.need_palm_facing)
+        problem = f.quality_problem(self.need_palm_facing, need_both=self.need_both_hands,
+                                    any_hand=self.any_hand)
+        if problem == "no_hand" and not self.need_hand:
+            return None             # e.g. the memory game also works with keys
+        return problem
 
     def skip_frame(self, now):
         """Called for a frame with a tracking problem, which update() does not see."""
@@ -688,6 +698,7 @@ class TwoPhaseExercise(Exercise):
             "holding": self._holding,
             "best": best,
             "finger_colors": {},
+            "demo_key": phase.key,          # the demo hand shows this position
         }
 
 
@@ -720,6 +731,7 @@ class SequenceExercise(Exercise):
         self.mode, self.length = self.initial_mode()
         self._clean_rounds = 0
         self._round = None
+        self._note_i = 0              # finger piano: the next note of the tune
 
     # --- to override ------------------------------------------------------
 
@@ -852,15 +864,20 @@ class SequenceExercise(Exercise):
         target = self._target()
         self._progress(now)
         if finger == target:
+            notes = []
+            if self.params.get("play_notes"):
+                # finger piano: each correct touch plays the next note (never a wrong-note sound)
+                notes = [Say("", "note", note=self._note_i)]
+                self._note_i += 1
             r["correct"] += 1
             r["step_times"].append(now - r["step_start"])
             r["step"] += 1
             r["step_start"] = now
             if r["step"] >= len(r["seq"]):
-                return self._finish_round(now)
+                return notes + self._finish_round(now)
             if self.mode in ("guided", "called_out") or r["revealed"]:
-                return [self._target_say()]
-            return [Say("Good.", "count", valid=self._while_step())]
+                return notes + [self._target_say()]
+            return notes + [Say("Good.", "count", valid=self._while_step())]
         r["wrong"] += 1
         if self.mode == "memory" and r["hidden"] and not r["revealed"]:
             # don't give the answer away, just invite another try
@@ -913,8 +930,12 @@ class SequenceExercise(Exercise):
         colors = {}
         if target and (self.mode != "memory" or r["revealed"]):
             colors[target] = "target"
+        demo = None
+        if target and (self.mode != "memory" or r["revealed"]):
+            demo = f"{self.action_word.lower()}_{target}"
         return {
             "kind": "sequence",
+            "demo_key": demo,
             "sequence": r["seq"],
             "step": r["step"],
             "hidden": not showing,

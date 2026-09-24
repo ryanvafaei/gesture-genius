@@ -56,8 +56,10 @@ PLAUSIBILITY_MOTION = {
     "elbow_extension": "elbow_flexion",
 }
 
-# The plan's exercise ids for the two hand exercises this app already had.
-PLAN_ID = {"grip_release": "hand_open_close", "thumb_opposition": "pinch"}
+# The plan's exercise ids for this app's hand exercises (Bloom = grip and release;
+# the pinch position is scored in bubble pinch and in thumb opposition's index touch).
+PLAN_ID = {"grip_release": "hand_open_close", "thumb_opposition": "pinch",
+           "bubble_pinch": "pinch"}
 
 
 # ---------------------------------------------------------------------------

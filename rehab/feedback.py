@@ -74,6 +74,10 @@ class Feedback:
         values.setdefault("coach", self.coach or "")
         return text.format_map(_Blank(values))
 
+    def items(self, category):
+        """A list in the phrase bank that is a list of items, not variants (e.g. warning signs)."""
+        return [v for v in self.phrases.get(category, []) if isinstance(v, str)]
+
     def first(self, *categories, **values):
         for c in categories:
             if self.has(c):
@@ -260,6 +264,14 @@ class Feedback:
         if t in ("ExerciseDone", "StartingPoint", "ProfileOverview", "DeleteProfileQuestion",
                  "ProfileKept", "ProfileDeleted", "NotTestable"):
             return self._say(self.pick(t), ev)
+        if t == "SafetyStop":
+            return (self._say(self.pick("SafetyStop"), ev)
+                    + self._say(self.pick("Safety.call", number=config.EMERGENCY_NUMBER), ev))
+        if t == "RatingQuestion":
+            out = self._say(self.pick(f"Rating.{g('key')}"), ev)
+            return out + (self._say(self.pick("RatingHint"), ev) if g("first") else [])
+        if t == "RatingThanks":
+            return self._say(self.pick("RatingThanks"), ev)
         # TargetLowered, RangeGrew, NameChosen ...: said by nobody (lowering is silent)
         return []
 
@@ -308,6 +320,21 @@ class Feedback:
             link = self.exercise_info(g("exercise")).get("links", {}).get(g("activity"), {})
             return {"title": g("title", ""), "message": link.get("sentence", ""),
                     "icon": self.activity_info(g("activity")).get("icon")}
+        if t == "SafetyStop":
+            helper = ""
+            if config.HELPER_NAME and config.HELPER_PHONE:
+                helper = self.pick("Safety.helper_line", helper=config.HELPER_NAME,
+                                   phone=config.HELPER_PHONE)
+            return {"title": self.pick("Safety.title"), "message": self.pick("SafetyStop"),
+                    "signs": self.items("Safety.signs"),
+                    "number": config.EMERGENCY_NUMBER,
+                    "number_line": self.pick("Safety.number_line", number=config.EMERGENCY_NUMBER),
+                    "helper": helper,
+                    "answer_labels": (self.pick("Card.safety_fine"), self.pick("Card.safety_quit"))}
+        if t == "RatingQuestion":
+            return {"title": self.pick(f"Rating.{g('key')}"), "message": self.pick("RatingHint"),
+                    "scale": self.items(f"Rating.{g('key')}.labels"),
+                    "skip": self.pick("Card.rating_skip")}
         texts = [m.text for m in self.words(ev) if m.text]
         if len(texts) == 1 and ". " in texts[0]:
             # "Hello Eleanor. Last time you ..." -> short title, the rest below

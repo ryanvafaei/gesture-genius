@@ -56,7 +56,7 @@ HISTORY_FIELDS = [
 SESSION_FIELDS = [
     "session_id", "date", "start", "end", "duration_min", "exercises", "total_reps",
     "success_rate", "average_range", "check_in", "difficult_day", "difficult_reason",
-    "highlight", "garden", "note",
+    "highlight", "garden", "note", "safety_stop", "exertion", "enjoyment", "ease",
 ]
 
 # benchmark logs, the columns of the plan's templates
@@ -155,12 +155,12 @@ def valid_date(text):
         return None
 
 
-def load_profile(path=config.PROFILE_PATH):
+def load_profile(path=None):
     """
     Her profile, checked field by field. Missing or wrongly typed fields get
     their default, so the coach only ever refers to facts that are really stored.
     """
-    profile = _read_json(path) or {}
+    profile = _read_json(path or config.PROFILE_PATH) or {}
     base = new_profile()
     # older profiles
     if "user" in profile and "name" not in profile:
@@ -180,24 +180,28 @@ def load_profile(path=config.PROFILE_PATH):
     return base
 
 
-def save_profile(profile, path=config.PROFILE_PATH):
-    _write_json(profile, path)
+def save_profile(profile, path=None):
+    _write_json(profile, path or config.PROFILE_PATH)
 
 
-# everything that belongs to her: removed together when she starts over
-PROFILE_FILES = (config.PROFILE_PATH, config.GARDEN_PATH, config.REP_LOG_PATH,
-                 config.HISTORY_PATH, config.SESSIONS_PATH, config.BENCH_REP_LOG_PATH,
-                 config.BENCH_SESSION_LOG_PATH)
+def profile_files():
+    """Everything that belongs to her: removed together when she starts over."""
+    return (config.PROFILE_PATH, config.GARDEN_PATH, config.REP_LOG_PATH,
+            config.HISTORY_PATH, config.SESSIONS_PATH, config.BENCH_REP_LOG_PATH,
+            config.BENCH_SESSION_LOG_PATH)
 
 
-def delete_profile(paths=PROFILE_FILES, keep_backup=config.KEEP_DELETED_PROFILE,
-                   backup_dir=config.DELETED_PROFILES_DIR):
+def delete_profile(paths=None, keep_backup=None, backup_dir=None):
     """
     Forget her: profile, garden and history, so the next start is a first day.
     With keep_backup the files are moved to backup_dir/<time>/ (a therapist can
     still put them back); otherwise they are erased. Returns the backup folder,
-    or None when nothing was kept.
+    or None when nothing was kept. Defaults come from config when called, so
+    they follow config.use_data_dir().
     """
+    paths = profile_files() if paths is None else paths
+    keep_backup = config.KEEP_DELETED_PROFILE if keep_backup is None else keep_backup
+    backup_dir = backup_dir or config.DELETED_PROFILES_DIR
     existing = [Path(p) for p in paths if Path(p).is_file()]
     if not existing:
         return None
@@ -220,8 +224,8 @@ def new_garden():
     return {"season": 1, "plots": [], "waterings": 0, "bees": 0, "butterflies": 0}
 
 
-def load_garden(path=config.GARDEN_PATH):
-    data = _read_json(path) or {}
+def load_garden(path=None):
+    data = _read_json(path or config.GARDEN_PATH) or {}
     garden = new_garden()
     for key in ("season", "waterings", "bees", "butterflies"):
         if isinstance(data.get(key), int) and data[key] >= 0:
@@ -238,8 +242,8 @@ def load_garden(path=config.GARDEN_PATH):
     return garden
 
 
-def save_garden(garden, path=config.GARDEN_PATH):
-    _write_json(garden, path)
+def save_garden(garden, path=None):
+    _write_json(garden, path or config.GARDEN_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -334,10 +338,10 @@ def _nanmean(values):
 
 class SessionLog:
 
-    def __init__(self, rep_path=config.REP_LOG_PATH, history_path=config.HISTORY_PATH,
+    def __init__(self, rep_path=None, history_path=None,
                  session_id=None, today=None, sessions_path=None):
-        self.rep_path = Path(rep_path)
-        self.history_path = Path(history_path)
+        self.rep_path = Path(rep_path or config.REP_LOG_PATH)
+        self.history_path = Path(history_path or config.HISTORY_PATH)
         # next to the history unless given, so test logs never touch data/
         self.sessions_path = Path(sessions_path) if sessions_path else \
             self.history_path.with_name("sessions.csv")
@@ -400,6 +404,7 @@ class SessionLog:
         """Summary row for one exercise of this session (not yet saved)."""
         extra = {}
         for key in ("isolation", "correct", "wrong", "level", "squeeze_hold_s", "relaxed_fully",
+                    "symmetry", "pairs", "turns", "affected_share",
                     "fma28_style", "pinch_gap_min", "fma24_style", "fma25_style"):
             vals = [r.extra.get(key) for r in reps if isinstance(r.extra.get(key), (int, float))]
             if vals:

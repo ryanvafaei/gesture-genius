@@ -106,6 +106,10 @@ class HandFeatures:
     gesture: str = None
     gesture_score: float = 0.0
 
+    image_size: tuple = None          # (width, height) of the camera image in pixels
+    # the other hand's features (two-hand match, finger counting), or None
+    other: "HandFeatures" = None
+
     @property
     def openness_mean(self):
         return float(np.mean([self.openness[f] for f in FINGERS])) if self.openness else 0.0
@@ -125,16 +129,24 @@ class HandFeatures:
             return 0.0
         return float(np.linalg.norm(self.image_points[9] - self.image_points[WRIST]))
 
-    def quality_problem(self, need_palm_facing=False):
-        """First quality problem as a short key, or None when all is fine."""
+    def quality_problem(self, need_palm_facing=False, need_both=False, any_hand=False):
+        """
+        First quality problem as a short key, or None when all is fine.
+
+        need_both  the other hand has to be in view too (two-hand exercises)
+        any_hand   either hand will do (e.g. pointing in the memory game)
+        """
         if not self.present:
             return "no_hand"
-        if not self.correct_hand:
+        if not self.correct_hand and not any_hand:
             return "wrong_hand"
         if self.too_small:
             return "too_far"
         if need_palm_facing and self.palm_facing < config.MIN_PALM_FACING:
             return "palm_away"
+        if need_both and (self.other is None or not self.other.present
+                          or self.other.handedness == self.handedness):
+            return "no_other_hand"
         return None
 
 
@@ -195,6 +207,31 @@ def choose_hand(observations, affected_hand=config.AFFECTED_HAND):
     return max(observations, key=lambda o: o.handedness_score)
 
 
+def choose_other(observations, chosen):
+    """The observation of the other hand (not `chosen`), or None."""
+    others = [o for o in observations or [] if o is not chosen]
+    return max(others, key=lambda o: o.handedness_score) if others else None
+
+
+# Finger counting (answers 1-5 without a keyboard). A finger counts as
+# raised when it is nearly straight; the thumb also has to stand away from
+# the palm (a straight thumb lying along the index finger does not count).
+RAISED_OPENNESS = 0.75
+RAISED_THUMB_OPENNESS = 0.7
+RAISED_THUMB_DIST = 0.9           # thumb tip -> little finger MCP, in palm sizes
+
+
+def count_extended(f):
+    """Number of raised fingers (0-5) of one hand, or 0 when it is not seen."""
+    if f is None or not f.present or not f.openness:
+        return 0
+    n = sum(1 for name in FINGERS if f.openness.get(name, 0.0) > RAISED_OPENNESS)
+    if (f.openness.get("thumb", 0.0) > RAISED_THUMB_OPENNESS
+            and f.thumb_to_pinky_mcp > RAISED_THUMB_DIST):
+        n += 1
+    return n
+
+
 def extract(obs, t, image_size, affected_hand=config.AFFECTED_HAND):
     """
     Compute HandFeatures for one hand.
@@ -203,7 +240,7 @@ def extract(obs, t, image_size, affected_hand=config.AFFECTED_HAND):
     t           timestamp in seconds
     image_size  (width, height) in pixels
     """
-    f = HandFeatures(t=t)
+    f = HandFeatures(t=t, image_size=tuple(image_size))
     if obs is None:
         return f
 

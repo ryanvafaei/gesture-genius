@@ -558,7 +558,7 @@ def test_arm_menu(log):
     x = Session(log, exercises=None, t=t)
     x.start()
     assert x.s.stage == "menu"
-    x.s.on_key(str(x.s.menu.index("arm")), x.clock.t)
+    x.s.on_key("a", x.clock.t)
     assert x.s.stage == "arm_menu"
     items = x.s.view()["menu"]
     assert items[0]["text"] == "Back"
@@ -569,7 +569,7 @@ def test_arm_menu(log):
     assert "This one is for when your therapist is with you." in x.said()
     x.s.on_key("m", x.clock.t)
     assert x.s.stage == "menu"
-    x.s.on_key(str(x.s.menu.index("arm")), x.clock.t)
+    x.s.on_key("a", x.clock.t)
     x.s.on_key(str(x.s.arm_menu.index("shoulder_flexion_raise")), x.clock.t)
     assert x.s.stage == "intro" and x.s.plan == ["shoulder_flexion_raise"]
 
@@ -625,3 +625,13 @@ def test_elbow_extension_is_capped_by_the_extension_deficit():
     mouth = create("hand_to_mouth", {"hand_to_mouth": {"left": {"best": 90.0}, "right": {"best": 140.0}}},
                    therapist=t)
     assert mouth.ladder.ceiling == 120                 # the flexion limit caps bending
+
+
+def test_a_right_handed_guest_trains_the_right_arm(log):
+    p = returning_profile()
+    p["affected_hand"] = "Right"
+    x = Session(log, profile=p)
+    assert x.s.side == "right" and x.s.therapist["unaffected_side"] == "left"
+    x.start()
+    x.run(13.5)
+    assert x.s.stage == "calibrating" and x.s.calibration.side == "left"   # the other arm first

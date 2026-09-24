@@ -231,4 +231,5 @@ class FingerToNose(ArmExercise):
             "phase_label": "TOUCH" if r.get("state") == "running" else "LAP",
             "value": err if finite(err) else None,
             "finger_colors": {},
+            "demo_key": "touch" if r.get("state") in ("ready", "running") else "rest",
         }

@@ -637,4 +637,6 @@ class ArmExercise(Exercise):
             "hold_progress": held,
             "best": best,
             "finger_colors": {},
+            # the small demo figure shows where to go now (rehab/demo.py)
+            "demo_key": "up" if self.state in ("ready", "moving", "hold") else "rest",
         }

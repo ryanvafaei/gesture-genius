@@ -359,3 +359,16 @@ def test_opposition_scores_the_index_pinch():
     rec = ex.reps[-1]
     assert rec.extra["fma28_style"] == 1                  # never 2: no tug on a pencil
     assert rec.extra["pinch_gap_min"] < 0.12
+
+
+def test_bubble_pinch_scores_the_pincer_grasp():
+    from rehab.exercises.bubble_pinch import BubblePinch
+    cal = calibrate(BubblePinch, [dict(thumb_out=1.0), dict(thumb_touch="index")])
+    ex = BubblePinch(calibration=cal)
+    clock = Clock()
+    ex.start_set(1, clock.t)
+    for _ in range(2):
+        run(ex, 3.0, clock, thumb_touch="index")
+        run(ex, 2.0, clock, thumb_out=1.0)
+    rec = ex.reps[-1]
+    assert rec.extra["fma28_style"] == 1 and rec.extra["pinch_gap_min"] < 0.12

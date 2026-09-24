@@ -75,6 +75,11 @@ class CalibrationRoutine:
         return self._i >= len(self.steps)
 
     @property
+    def index(self):
+        """The current step, counted from 0."""
+        return max(0, self._i)
+
+    @property
     def step(self):
         return self.steps[self._i] if 0 <= self._i < len(self.steps) else None
 
@@ -117,7 +122,9 @@ class CalibrationRoutine:
     def quality_problem(self, f):
         """Tracking problem for the current step (see Think.QUALITY_TEXT), or None."""
         step = self.step
-        return f.quality_problem(step.need_palm_facing if step else False)
+        return f.quality_problem(step.need_palm_facing if step else False,
+                                 need_both=bool(step and step.need_both_hands),
+                                 any_hand=self.exercise_cls.any_hand)
 
     def resume(self, now):
         """After a pause: she may have moved, so measure this step again."""

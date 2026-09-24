@@ -40,6 +40,7 @@ class ThumbOpposition(SequenceExercise):
         "Take your time.",
     )
     need_palm_facing = True
+    uses_level = True
     action_word = "Touch"
     progress_phrase = "You touched your fingers {pct}% quicker than {when}."
 

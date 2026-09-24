@@ -43,6 +43,27 @@ THERAPIST_PROFILE_PATH = BENCHMARKS_DIR / "therapist_profile.json"
 # benchmark logs (plan section 12): one row per rep, one per session
 BENCH_REP_LOG_PATH = DATA_DIR / "benchmark_reps.csv"
 BENCH_SESSION_LOG_PATH = DATA_DIR / "benchmark_sessions.csv"
+# guest sessions (python main.py --guest) keep their data apart from hers
+GUESTS_DIR = DATA_DIR / "guests"
+
+
+def use_data_dir(path):
+    """
+    Keep all personal data in another folder (e.g. a marketplace guest's),
+    so her own files in data/ are never touched. storage reads these paths
+    when it is called, so this works at any time before a session starts.
+    """
+    global DATA_DIR, PROFILE_PATH, REP_LOG_PATH, HISTORY_PATH, SESSIONS_PATH
+    global GARDEN_PATH, DELETED_PROFILES_DIR, BENCH_REP_LOG_PATH, BENCH_SESSION_LOG_PATH
+    DATA_DIR = Path(path)
+    PROFILE_PATH = DATA_DIR / "profile.json"
+    REP_LOG_PATH = DATA_DIR / "reps.csv"
+    HISTORY_PATH = DATA_DIR / "history.csv"
+    SESSIONS_PATH = DATA_DIR / "sessions.csv"
+    GARDEN_PATH = DATA_DIR / "garden.json"
+    DELETED_PROFILES_DIR = DATA_DIR / "deleted"
+    BENCH_REP_LOG_PATH = DATA_DIR / "benchmark_reps.csv"
+    BENCH_SESSION_LOG_PATH = DATA_DIR / "benchmark_sessions.csv"
 
 # ---------------------------------------------------------------------------
 # User
@@ -154,6 +175,7 @@ FATIGUE_DROP = 0.80
 # Session order
 # ---------------------------------------------------------------------------
 
+# The menu, in this order (keys 1-9).
 SESSION_ORDER = [
     "grip_release",
     "finger_abduction",
@@ -161,7 +183,24 @@ SESSION_ORDER = [
     "thumb_opposition",
     "finger_tapping",
     "grip_squeeze",
+    "bubble_pinch",
+    "two_hand_match",
+    "memory_pairs",
 ]
+# "All of today's exercises": the six hand exercises and the memory game as a
+# restful end. Bubble pinch and two-hand match are in the menu only.
+DAILY_PLAN = [
+    "grip_release",
+    "finger_abduction",
+    "thumb_flexion",
+    "thumb_opposition",
+    "finger_tapping",
+    "grip_squeeze",
+    "memory_pairs",
+]
+# python main.py --short (e.g. for guests at the marketplace): one short set.
+# "reps" is used for the range exercises, "rounds" for sequences and boards.
+SHORT_SESSION = {"sets": 1, "reps": 5, "rounds": 1}
 # Strengthening (stage 5) only every other day.
 EVERY_OTHER_DAY = {"grip_squeeze"}
 
@@ -222,6 +261,8 @@ EXERCISES = {
         "rounds_to_level_up": 2,            # error-free rounds in a row
         "memory_show_s": 5.0,
         "level_lengths": {1: 7, 2: 3, 3: 4, 4: 5},
+        # "finger piano": every correct touch plays the next note of a tune
+        "play_notes": True,
     },
     "finger_tapping": {
         "sets": 2, "reps": 2,               # reps = rounds of the sequence
@@ -244,6 +285,32 @@ EXERCISES = {
         "hold_s": 4.0,                               # squeeze 3-5 s
         "relax_s": 4.0,                              # rest 3-5 s
         "count_aloud": True,
+    },
+    "bubble_pinch": {
+        "sets": 2, "reps": 8,
+        "high": 0.70, "low": 0.30, "gap": 0.10,
+        "hold_s": 2.0,                               # pinch and hold
+        "release_s": 1.0,
+        "count_aloud": True,
+        "max_palm_rotation_deg": 35.0,
+        "max_wrist_shift": 0.5,
+    },
+    "two_hand_match": {
+        "sets": 2, "reps": 8,
+        "high": 0.70, "low": 0.30, "gap": 0.10,
+        "hold_s": 1.0,
+        "count_aloud": False,
+        "max_palm_rotation_deg": 35.0,
+        "max_wrist_shift": 0.6,
+    },
+    "memory_pairs": {
+        "sets": 1, "reps": 2,                        # reps = boards
+        "start_level": 1,
+        "level_pairs": {1: 2, 2: 3, 3: 4},           # pairs on the board per level
+        "boards_to_level_up": 2,                     # good boards in a row
+        "dwell_s": 1.5,                              # hold the finger still to choose
+        "dwell_radius": 0.04,                        # how still (fraction of the image width)
+        "show_mismatch_s": 2.0,
     },
 }
 
@@ -366,6 +433,22 @@ INTRO_CARD_S = 5.0             # activity card before an exercise
 CARD_PAUSE_S = 1.0             # after a card's speech, before moving on
 GARDEN_SCREEN_S = 8.0
 GOODBYE_S = 4.0
+
+# Questions at the end of a session (1-5, keys or fingers held up), for
+# measuring how the coach is experienced. Guests are also asked "ease".
+RATING_QUESTIONS = ("exertion", "enjoyment")
+GUEST_RATING_QUESTIONS = ("exertion", "enjoyment", "ease")
+RATING_HOLD_S = 1.5
+RATING_TIMEOUT_S = 25
+
+# Stop / "I don't feel well" (S key): the safety screen can show a person to
+# call. Empty = not shown. The app never calls anyone itself.
+HELPER_NAME = ""
+HELPER_PHONE = ""
+EMERGENCY_NUMBER = "112"
+
+# Finger piano notes
+NOTE_VOLUME = 0.35
 
 # Yes / no without a keyboard: thumbs up / thumbs down, held briefly.
 # Either hand counts. Space or "y" = yes and "n" = no stay as a backup.
