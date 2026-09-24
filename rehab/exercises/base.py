@@ -106,6 +106,10 @@ class CalibrationStep:
     need_both_hands: bool = False
 
 
+def _no_trace(kind, **data):
+    pass
+
+
 @dataclass
 class RepRecord:
     exercise: str
@@ -273,6 +277,7 @@ class Exercise:
         self.fatigue = False
         self._hints = RateLimiter(config.HINT_REPEAT_S)
         self._last_progress_t = None
+        self.trace = _no_trace        # verbose log: trace(kind, **data), set by the session
         # set by the coach every frame: True while the speaker is talking
         self.speaking = False
 
@@ -303,6 +308,16 @@ class Exercise:
     @property
     def sets(self):
         return int(self.params.get("sets", 3))
+
+    # --- verbose log (main --verbose) -----------------------------------------
+
+    def debug_settings(self):
+        """Thresholds worked out from the calibration, logged once when the exercise starts."""
+        return {}
+
+    def debug_state(self):
+        """What the detector sees this frame (logged every frame); the display plus inner state."""
+        return {k: v for k, v in self.display.items() if k != "demo_key"}
 
     def first_messages(self):
         """Said when a set starts (the instructions are said once, by the session)."""
@@ -836,6 +851,12 @@ class SequenceExercise(Exercise):
 
         events = self.detect(f, now)
         for kind, finger, info in events:
+            cur = self._round
+            prompted = self._target() if cur is not None and cur["step"] < len(cur["seq"]) else None
+            self.trace("detect", exercise=self.name, event=kind, finger=finger, prompted=prompted,
+                       correct=finger == prompted if kind == "start" else None,
+                       counted=not (kind == "start" and self.mode == "memory" and not r["hidden"]),
+                       **info)
             if kind == "end":
                 out += self.on_event_end(finger, info, now) or []
                 continue

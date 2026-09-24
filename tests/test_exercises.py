@@ -8,7 +8,7 @@ from rehab.exercises.grip_release import GripRelease
 from rehab.exercises.grip_squeeze import GripSqueeze
 from rehab.exercises.thumb_flexion import ThumbFlexion
 from rehab.exercises.thumb_opposition import ThumbOpposition
-from helpers import Clock, calibrate, feat, lerp, ramp, run, texts
+from helpers import OPPOSITION_POSES, Clock, calibrate, feat, lerp, ramp, run, texts
 
 # Eleanor's range: she can only open part way and close part way.
 HER_OPEN = (25, 35, 20)
@@ -176,7 +176,7 @@ def test_thumb_flexion_reps_and_other_fingers_check():
 # --- thumb opposition ----------------------------------------------------------------------
 
 def opposition_cal():
-    return calibrate(ThumbOpposition, [dict(), dict(thumb_touch="index")])
+    return calibrate(ThumbOpposition, OPPOSITION_POSES)
 
 
 def touch(ex, clock, finger):
@@ -348,7 +348,7 @@ def test_grip_full_range_reaches_the_milestones_once(grip_cal):
 
 
 def test_opposition_scores_the_index_pinch():
-    cal = calibrate(ThumbOpposition, [dict(thumb_out=1.0), dict(thumb_touch="index")])
+    cal = calibrate(ThumbOpposition, OPPOSITION_POSES)
     ex = ThumbOpposition(calibration=cal, level=1)
     clock = Clock()
     ex.start_set(1, clock.t)

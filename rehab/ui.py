@@ -672,6 +672,29 @@ def draw_stop_hint(img, text, label, right, bottom, size=26):
     text.add(label, (x0 + 20, y0 + h * 0.66), size, WHITE, bold=True)
 
 
+def draw_button(img, text, rect, label, fill, ink=WHITE, size=26, note=None):
+    """A flat button (x0, y0, x1, y1) with its label centred; note: a smaller line under it."""
+    x0, y0, x1, y1 = (int(v) for v in rect)
+    cv2.rectangle(img, (x0, y0), (x1, y1), fill, -1, cv2.LINE_AA)
+    cx = (x0 + x1) / 2
+    if note:
+        text.add(label, (cx, y0 + (y1 - y0) * 0.45), size, ink, bold=True, align="center")
+        text.add(note, (cx, y0 + (y1 - y0) * 0.82), int(size * 0.7), ink, align="center")
+    else:
+        text.add(label, (cx, y0 + (y1 - y0) / 2 + size * 0.35), size, ink, bold=True, align="center")
+
+
+def draw_toolbar_icon(img, rect, active=False):
+    """Three lines ("menu" icon) in a rounded square; brighter while the toolbar is open."""
+    x0, y0, x1, y1 = (int(v) for v in rect)
+    fill = (90, 90, 90) if active else (60, 60, 60)
+    cv2.rectangle(img, (x0, y0), (x1, y1), fill, -1, cv2.LINE_AA)
+    pad = (x1 - x0) // 4
+    for i in range(3):
+        y = int(y0 + (y1 - y0) * (0.3 + 0.2 * i))
+        cv2.line(img, (x0 + pad, y), (x1 - pad, y), WHITE, 4, cv2.LINE_AA)
+
+
 def card_screen(size, view, text, character=None):
     """
     Full-screen card: coach face, title, one message, optional icon and yes/no

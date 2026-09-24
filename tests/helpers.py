@@ -75,6 +75,10 @@ def calibrate(exercise_cls, poses, clock=None):
     return routine.result
 
 
+# thumb opposition calibration: thumb away, then a touch on each fingertip
+OPPOSITION_POSES = [dict()] + [dict(thumb_touch=f) for f in ("index", "middle", "ring", "pinky")]
+
+
 def texts(messages):
     return [m.text for m in messages]
 

@@ -139,6 +139,11 @@ class SpeechBase:
     feedback = None
     mood = "neutral"
     _seq = 0
+    on_spoken = None        # callable(text) when a line is really spoken (verbose log)
+
+    def _spoken(self, text):
+        if self.on_spoken is not None:
+            self.on_spoken(text)
 
     def say(self, msg):
         if isinstance(msg, (Event, list, tuple)):
@@ -283,6 +288,7 @@ class Speaker(SpeechBase):
                 self.last_text = msg.text
                 self.last_time = time.monotonic()
                 self.mood = msg.mood or "neutral"
+            self._spoken(msg.text)
             try:
                 self._speak(msg)
             finally:
@@ -335,6 +341,7 @@ class SilentSpeaker(SpeechBase):
             return
         self.spoken.append(msg)
         self.last_text = msg.text
+        self._spoken(msg.text)
         self.mood = msg.mood or "neutral"
         if self.echo:
             print(f"[coach] {msg.text}")
@@ -371,6 +378,7 @@ FINGER_STATE_COLORS = {"lagging": ORANGE, "target": CYAN, "active": GREEN}
 GAP_COLORS = {"index_middle": (80, 180, 255), "middle_ring": (120, 220, 120), "ring_pinky": (255, 150, 200)}
 
 PANEL_W = 420
+SKIP_BOTTOM = 105       # the Skip button's bottom edge, from the bottom of the panel
 # full-screen pictures (ui.py); the camera screen is drawn here
 SCREENS = {"card": ui.card_screen, "summary": ui.summary_screen, "garden": ui.garden_screen,
            "profile": ui.profile_screen, "rating": ui.rating_screen, "safety": ui.safety_screen}
@@ -499,6 +507,8 @@ class Display:
         self.fullscreen = fullscreen
         self._opened = False
         self._cache = {}
+        self.hotspots = []          # [((x0, y0, x1, y1), action)] of the last picture
+        self._click = None
 
     def canvas_size(self, frame_shape):
         """
@@ -854,7 +864,7 @@ class Display:
                 view["camera"] = frame
             layer = text or ui.TextLayer()
             canvas = SCREENS[screen]((cw, ch), view, layer, self.character)
-            return layer.apply(canvas)
+            return self._controls(layer.apply(canvas), view, card=True)
 
         camera = fit(frame, cw - PANEL_W, ch)
         view["camera_rect"] = fit_rect(frame.shape, cw - PANEL_W, ch)
@@ -866,7 +876,68 @@ class Display:
         finally:
             _LAYER["text"] = None
             _LAYER["offsets"] = {}
-        return text.apply(canvas) if text is not None else canvas
+        return self._controls(text.apply(canvas) if text is not None else canvas, view)
+
+    # --- buttons that can be clicked (toolbar, skip) ----------------------------
+
+    def _controls(self, canvas, view, card=False):
+        """
+        The toolbar (menu only) and the Skip button, on top of the finished
+        picture. Kept at the right, like the Stop hint, never at the left
+        edge. Remembers where each button is for clicks.
+        """
+        self.hotspots = []
+        h, w = canvas.shape[:2]
+        layer = ui.TextLayer()
+        toolbar = view.get("toolbar")
+        if toolbar is not None:
+            icon = (w - 72, 12, w - 14, 70)
+            ui.draw_toolbar_icon(canvas, icon, toolbar.get("open"))
+            self.hotspots.append((icon, "toolbar"))
+            if toolbar.get("open"):
+                items = toolbar.get("items", [])
+                bw, gap, y0, y1 = 300, 14, 10, 96
+                # an opaque strip (the text under it would show through)
+                cv2.rectangle(canvas, (0, 0), (icon[0] - 1, y1 + 10), DARK, -1)
+                x1 = icon[0] - gap
+                for item in reversed(items):
+                    rect = (x1 - bw, y0, x1, y1)
+                    if "on" in item:
+                        label = f"{item['key']}  {item['label']}"
+                        note = "On" if item["on"] else "Off"
+                        fill = GREEN if item["on"] else (90, 90, 90)
+                    else:
+                        label, note = f"{item['key']}  {item['label']}", item.get("status") or ""
+                        fill = BLUE
+                    ui.draw_button(canvas, layer, rect, label, fill, WHITE, 26, note or None)
+                    self.hotspots.append((rect, item["id"]))
+                    x1 -= bw + gap
+        skip = view.get("skip")
+        if skip:
+            label = f"{skip['key']}  {skip['label']}"
+            if card:
+                rect = (w - 300, 14, w - 20, 72)
+            else:
+                # the panel, above the Stop hint (_render_camera leaves room)
+                rect = (w - PANEL_W + 20, h - SKIP_BOTTOM - 50, w - 20, h - SKIP_BOTTOM)
+            ui.draw_button(canvas, layer, rect, label, ORANGE, WHITE, 26)
+            self.hotspots.append((rect, "skip"))
+        return layer.apply(canvas)
+
+    def _on_mouse(self, event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONUP:
+            self._click = (x, y)
+
+    def pop_click(self):
+        """The action of the button clicked since the last call, or None."""
+        click, self._click = self._click, None
+        if click is None:
+            return None
+        x, y = click
+        for (x0, y0, x1, y1), action in self.hotspots:
+            if x0 <= x <= x1 and y0 <= y <= y1:
+                return action
+        return None
 
     def _render_camera(self, frame, panel, view):
         """frame: the camera column (the camera image with dark space around it)."""
@@ -884,8 +955,11 @@ class Display:
         if view.get("step_label"):
             _text(panel, view["step_label"], (20, 155), 0.75, GREY, 1)
             top = 175
-        # the stop hint sits at the bottom of the panel, above the key help
+        # the stop hint sits at the bottom of the panel, above the key help,
+        # and the Skip button (drawn later, _controls) above the stop hint
         stop_top = h - 100 if view.get("stop_hint") else h - 45
+        if view.get("skip"):
+            stop_top = h - SKIP_BOTTOM - 60
 
         stage = view.get("stage")
         if stage == "exercise" and ex.get("kind") == "bar":
@@ -977,6 +1051,8 @@ class Display:
         """A window that scales its picture to fit (never cut off), full screen by default."""
         flags = cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO | getattr(cv2, "WINDOW_GUI_NORMAL", 0)
         cv2.namedWindow(self.window, flags)
+        # clicks arrive in picture coordinates, whatever the window's size
+        cv2.setMouseCallback(self.window, self._on_mouse)
         if self.screen:
             # the size it has when not full screen: most of the screen
             k = min(0.9 * self.screen[0] / self._size[0], 0.85 * self.screen[1] / self._size[1])

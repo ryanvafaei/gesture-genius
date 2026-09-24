@@ -18,7 +18,8 @@ from rehab.exercises.memory_pairs import MemoryPairs
 from rehab.exercises.thumb_opposition import ThumbOpposition
 from rehab.exercises.two_hand_match import TwoHandMatch
 from rehab.Think import FingerCount, SessionManager
-from helpers import Clock, answer, calibrate, feat, returning_profile, run, texts
+from helpers import (OPPOSITION_POSES, Clock, answer, calibrate, feat, returning_profile, run,
+                     texts)
 from synthetic_hand import IMAGE_SIZE, hand
 
 FIST = dict(flex=(80, 95, 60), thumb_out=0.0)
@@ -213,7 +214,7 @@ def test_memory_pairs_starts_without_measuring_and_takes_number_keys(log):
 # --- finger piano ----------------------------------------------------------------------------
 
 def test_finger_piano_plays_a_note_for_correct_touches_only():
-    cal = calibrate(ThumbOpposition, [dict(), dict(thumb_touch="index")])
+    cal = calibrate(ThumbOpposition, OPPOSITION_POSES)
     ex = ThumbOpposition(calibration=cal, level=1)
     clock = Clock()
     ex.start_set(1, clock.t)

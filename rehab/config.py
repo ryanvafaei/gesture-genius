@@ -45,6 +45,8 @@ BENCH_REP_LOG_PATH = DATA_DIR / "benchmark_reps.csv"
 BENCH_SESSION_LOG_PATH = DATA_DIR / "benchmark_sessions.csv"
 # guest sessions (python main.py --guest) keep their data apart from hers
 GUESTS_DIR = DATA_DIR / "guests"
+# her own data folder; stays when a guest's folder is used (use_data_dir)
+BASE_DATA_DIR = DATA_DIR
 
 
 def use_data_dir(path):
@@ -198,9 +200,11 @@ DAILY_PLAN = [
     "grip_squeeze",
     "memory_pairs",
 ]
-# python main.py --short (e.g. for guests at the marketplace): one short set.
-# "reps" is used for the range exercises, "rounds" for sequences and boards.
-SHORT_SESSION = {"sets": 1, "reps": 5, "rounds": 1}
+# Short sessions (python main.py --short, or the toolbar in the menu; e.g.
+# for guests at the marketplace): one short set per exercise and a short
+# rest between exercises. "reps" is used for the range and arm exercises,
+# "rounds" for sequences and boards.
+SHORT_SESSION = {"sets": 1, "reps": 3, "rounds": 1, "rest_between_exercises_s": 5}
 # Strengthening (stage 5) only every other day.
 EVERY_OTHER_DAY = {"grip_squeeze"}
 
@@ -250,12 +254,15 @@ EXERCISES = {
     },
     "thumb_opposition": {
         "sets": 2, "reps": 3,               # reps = rounds of the sequence
-        # touch threshold = touch + factor * (open - touch), per finger
+        # closeness per finger: 0 at her calibrated touch of that finger,
+        # 1 with the thumb away; a touch starts below touch_factor and ends
+        # above release_factor
         "touch_factor": 0.35,
         "release_factor": 0.55,
-        # the touched finger's distance must be this much smaller than the
-        # next closest fingertip
-        "dominance_ratio": 0.75,
+        # the touched finger must be at least this much closer than the next
+        "dominance_margin": 0.15,
+        # prompted finger and a neighbour both at the thumb: take the prompted one
+        "prefer_target": True,
         "min_touch_s": 0.3,
         "start_level": 1,
         "rounds_to_level_up": 2,            # error-free rounds in a row
@@ -272,8 +279,21 @@ EXERCISES = {
         "lift_factor": 0.5,
         "min_lift": 0.08,                   # in palm sizes
         "mcp_lift_deg": 15.0,
+        # each finger's lift compared with the index (the ring finger is tied
+        # to its neighbours and lifts least); scales both thresholds
+        "finger_scale": {"index": 1.0, "middle": 0.85, "ring": 0.55, "pinky": 0.6},
+        "min_lift_floor": 0.04,             # in palm sizes, whatever the scale
         "release_ratio": 0.6,
         "min_lift_s": 0.25,
+        "candidate_keep": 0.75,             # a finger about to count may dip to this (noise)
+        # the flat position follows the hand while no finger is lifted
+        "baseline_tau_s": 3.0,
+        "baseline_below": 0.6,              # only fingers scoring below this
+        # the prompted finger wins when it scores at least this share of the best
+        "target_bias": 0.75,
+        # neighbours of the lifted finger may move this much (share of their
+        # threshold) before isolation drops: fingers are coupled
+        "coupling_allowance": 0.3,
         "good_isolation": 0.75,
         "called_out_count": 8,
         "pattern_length": 3,
@@ -439,6 +459,7 @@ GOODBYE_S = 4.0
 RATING_QUESTIONS = ("exertion", "enjoyment")
 GUEST_RATING_QUESTIONS = ("exertion", "enjoyment", "ease")
 RATING_HOLD_S = 1.5
+RATING_VOTE_S = 0.5            # finger counts are voted over this window (tracking noise)
 RATING_TIMEOUT_S = 25
 
 # Stop / "I don't feel well" (S key): the safety screen can show a person to
