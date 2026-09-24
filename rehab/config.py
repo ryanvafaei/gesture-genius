@@ -32,6 +32,17 @@ CONTENT_DIR = ROOT_DIR / "content"
 ASSETS_DIR = ROOT_DIR / "assets"
 FONT_REGULAR = ASSETS_DIR / "fonts" / "AtkinsonHyperlegible-Regular.ttf"
 FONT_BOLD = ASSETS_DIR / "fonts" / "AtkinsonHyperlegible-Bold.ttf"
+# Arm exercises track the body with MediaPipe Pose (loaded only when needed).
+POSE_MODEL_PATH = ROOT_DIR / "models" / "pose_landmarker_lite.task"
+# Movement benchmarks (see benchmarks/BENCHMARK_PLAN.md): every number there
+# has a source or is marked proposed. The therapist profile sets her sex and
+# age for the norms, limits, and which arm exercises she may do alone.
+BENCHMARKS_DIR = ROOT_DIR / "benchmarks"
+BENCHMARKS_PATH = BENCHMARKS_DIR / "benchmarks.json"
+THERAPIST_PROFILE_PATH = BENCHMARKS_DIR / "therapist_profile.json"
+# benchmark logs (plan section 12): one row per rep, one per session
+BENCH_REP_LOG_PATH = DATA_DIR / "benchmark_reps.csv"
+BENCH_SESSION_LOG_PATH = DATA_DIR / "benchmark_sessions.csv"
 
 # ---------------------------------------------------------------------------
 # User
@@ -235,6 +246,82 @@ EXERCISES = {
         "count_aloud": True,
     },
 }
+
+# ---------------------------------------------------------------------------
+# Arm exercises and movement benchmarks (benchmarks/BENCHMARK_PLAN.md)
+#
+# Angles are in degrees and judged with the measurement tolerance of each
+# task (MediaPipe limits of agreement in stroke, Lazem 2026). Sets, reps,
+# rest and hold per exercise come from benchmarks/therapist_profile.json.
+# Values marked "proposed" are project defaults, not from the sources.
+# ---------------------------------------------------------------------------
+
+# Order in the "Arm exercises" menu.
+ARM_EXERCISES = [
+    "shoulder_flexion_raise",
+    "shoulder_abduction_raise",
+    "hand_to_mouth",
+    "hand_to_head",
+    "elbow_extension",
+    "wrist_extension",
+    "tabletop_reach",
+    "finger_to_nose_timed",
+]
+ARM_DEFAULT_SETS = 2                # when the therapist profile gives none (proposed)
+
+# Sense: pose landmarks (proposed values from the plan, section 14)
+POSE_MIN_DETECTION_CONFIDENCE = 0.5
+POSE_MIN_TRACKING_CONFIDENCE = 0.5
+LOW_PASS_HZ = 6.0                   # Gates 2016 filtered markers at 6 Hz
+# Framing check before an arm exercise: the needed landmarks must be seen
+# this long in a row, and not closer than EDGE_MARGIN to the image edge.
+SETUP_CHECK_HOLD_S = 1.5
+SETUP_EDGE_MARGIN = 0.03            # fraction of the image
+# Camera view from the shoulder width / torso length ratio (proposed):
+# side-on (sagittal) below the first, facing the camera (frontal) above
+# the second, 45 degrees in between.
+VIEW_SAGITTAL_MAX = 0.35
+VIEW_FRONTAL_MIN = 0.60
+
+# Calibration and weekly assessment (FMA: demonstrate, practise, the
+# unaffected side first; Lazem: about 10 s rest between reps)
+BENCH_PRACTICE_TRIALS = 2
+BENCH_CALIBRATION_REPS = 3
+BENCH_REST_BETWEEN_REPS_S = 10
+ASSESSMENT_EVERY_DAYS = 7           # an arm calibration is also the weekly assessment
+
+# Rep state machine
+ARM_START_HOLD_FRAMES = 5           # start posture held this many frames (debounce)
+ARM_START_ELEVATION_MAX = 20.0      # "arm at your side" (proposed)
+ARM_BENT_ELBOW_MIN = 60.0           # start of elbow extension: elbow bent at least this (proposed)
+ARM_WRIST_START_MAX = 5.0           # wrist extension starts at or below neutral + this (proposed)
+ARM_HAND_DOWN_TORSO = 0.5           # hand in the lap / hanging: wrist this far below the shoulder (torso lengths, proposed)
+NOSE_ROUND_TIMEOUT_S = 60           # finger to nose: a round ends after this, touches or not (proposed)
+# Hand to head: the wrist reaches the ear. benchmarks.json proposes 0.5
+# shoulder widths, but side-on the shoulders overlap, so the distance is
+# divided by the torso length instead: 0.35 torso lengths is about the same.
+HAND_TO_EAR_TORSO = 0.35
+
+# Finger joints (grip and release): MediaPipe finger angles are not
+# validated, so "opened wider" needs a mean change of the provisional 20
+# degrees per joint (benchmarks.json) or a rise in each of this many sessions.
+TREND_SESSIONS = 3
+
+# Progression (plan 9.4, proposed): per session, never during one
+LEVEL_RAISE_AT = 0.80               # clean success, two sessions in a row
+LEVEL_LOWER_AT = 0.50
+MISSED_SESSION_DAYS = 3             # 2 missed daily sessions: restart one level lower
+
+# Reaching (Levin 2004 Reaching Performance Scale; thresholds proposed)
+REACH_PRIMARY_TOLERANCE = 0.05      # hand movement, in arm lengths
+REACH_FAR_ARRIVED = 0.60            # far target: hand moved at least this many arm lengths
+REACH_ELBOW_ALMOST_STRAIGHT = 20.0  # degrees of elbow flexion left at the far target
+
+# Finger to nose (FMA 31-33, adapted: eyes open)
+NOSE_TOUCHES = 5
+NOSE_AWAY = 2.0                     # finger this far from the nose (eye distances) = away again
+REST_ZONE_TORSO = 0.3               # wrist within this share of the torso above the hips = in the lap
+TREMOR_MAX_PEAKS = 2                # speed peaks per approach for "no tremor" (proposed)
 
 # ---------------------------------------------------------------------------
 # Motivation: personal bests, praise, difficult days, activities, garden.

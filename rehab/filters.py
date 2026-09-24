@@ -101,3 +101,63 @@ class FeatureFilter:
     def speed(self, name):
         f = self._filters.get(name)
         return f.speed if f is not None else 0.0
+
+
+class LowPass:
+    """
+    Causal 2nd-order Butterworth low-pass for body angles (default 6 Hz,
+    as Gates et al. 2016 filtered their marker data). Starts at the first
+    sample, so there is no start-up transient. NaN (a frame without a
+    reading) returns the last output and leaves the filter unchanged.
+    """
+
+    def __init__(self, fs=30.0, fc=6.0):
+        k = math.tan(math.pi * min(fc, 0.45 * fs) / fs)
+        q = 1 / math.sqrt(2)
+        norm = 1 / (1 + k / q + k * k)
+        self.b = (k * k * norm, 2 * k * k * norm, k * k * norm)
+        self.a = (2 * (k * k - 1) * norm, (1 - k / q + k * k) * norm)
+        self.reset()
+
+    def reset(self):
+        self.x = [None, None]
+        self.y = [None, None]
+
+    def __call__(self, v):
+        if v is None or v != v:
+            return self.y[0] if self.y[0] is not None else float("nan")
+        v = float(v)
+        if self.x[0] is None:
+            self.x = [v, v]
+            self.y = [v, v]
+            return v
+        b, a = self.b, self.a
+        y = b[0] * v + b[1] * self.x[0] + b[2] * self.x[1] - a[0] * self.y[0] - a[1] * self.y[1]
+        self.x = [v, self.x[0]]
+        self.y = [y, self.y[0]]
+        return y
+
+
+class LowPassBank:
+    """One LowPass per named value; a value not seen for reset_after_s starts fresh."""
+
+    def __init__(self, fs=30.0, fc=6.0, reset_after_s=0.5):
+        self.fs, self.fc = fs, fc
+        self.reset_after_s = reset_after_s
+        self._filters = {}
+        self._last_seen = {}
+
+    def reset(self):
+        self._filters.clear()
+        self._last_seen.clear()
+
+    def __call__(self, name, value, t):
+        if value is None or value != value:
+            return float("nan")
+        f = self._filters.get(name)
+        if f is None:
+            f = self._filters[name] = LowPass(self.fs, self.fc)
+        elif t - self._last_seen.get(name, t) > self.reset_after_s:
+            f.reset()
+        self._last_seen[name] = t
+        return f(value)

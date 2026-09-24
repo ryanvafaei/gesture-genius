@@ -25,7 +25,8 @@ from rehab.exercises.base import FINGER_WORDS, Say, number_word
 from rehab.storage import load_content
 
 HAPPY = {"PersonalBest", "TargetRaised", "MilestoneReached", "Improvement", "SteadyHold",
-         "GardenGrew", "StartingPoint", "RepCompleted"}
+         "GardenGrew", "StartingPoint", "RepCompleted", "BenchmarkMilestone", "LevelRaised",
+         "AssessmentImproved"}
 ENCOURAGING = {"RecoveredAfterHint", "EffortPraise", "DifficultDayStarted"}
 
 
@@ -102,9 +103,16 @@ class Feedback:
         metric = highlight.get("metric")
         return self.first(f"Fact.{kind}.{metric}", f"Fact.{kind}",
                           part=info.get("part", "hand"), what=info.get("what", "exercise"),
-                          count=highlight.get("count", ""),
+                          count=highlight.get("count", ""), deg=highlight.get("deg", ""),
+                          goal=self.goal(highlight.get("task")),
                           practice_for=activity.get("practice_for",
                                                     self.activity_name(highlight.get("activity"))))
+
+    def goal(self, task):
+        """A daily task from the benchmarks (Gates 2016) as her goal: "drink from your cup of tea"."""
+        if not task:
+            return ""
+        return self.first(f"Goal.{task}") or task.lower()
 
     # --- events -> Say --------------------------------------------------------------
 
@@ -183,6 +191,16 @@ class Feedback:
             return self.first(f"Improvement.{ev.get('exercise')}", "Improvement")
         if t == "MilestoneReached":
             return self._milestone(ev)
+        if t == "BenchmarkMilestone":
+            if ev.get("kind") == "fma":
+                return self.first(f"BenchmarkMilestone.fma.{ev.get('exercise')}",
+                                  "BenchmarkMilestone.fma", what=what)
+            return self.first(f"BenchmarkMilestone.{ev.get('task')}", "BenchmarkMilestone",
+                              what=what, goal=self.goal(ev.get("task")))
+        if t == "AssessmentImproved":
+            return self.pick(t, what=what, deg=ev.get("deg"))
+        if t == "LevelRaised":
+            return self.first("LevelRaised", "TargetRaised", what=what)
         return self.pick(t, what=what)
 
     def _milestone(self, ev):
@@ -240,7 +258,7 @@ class Feedback:
                    else self.pick("Goodbye.next_no_garden"))
             return out + self._say(nxt, ev)
         if t in ("ExerciseDone", "StartingPoint", "ProfileOverview", "DeleteProfileQuestion",
-                 "ProfileKept", "ProfileDeleted"):
+                 "ProfileKept", "ProfileDeleted", "NotTestable"):
             return self._say(self.pick(t), ev)
         # TargetLowered, RangeGrew, NameChosen ...: said by nobody (lowering is silent)
         return []

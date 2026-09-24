@@ -94,6 +94,9 @@ class HandFeatures:
     tip_height: dict = field(default_factory=dict)      # finger -> tip distance from palm plane / palm size
     thumb_flexion: float = 0.0        # thumb MCP + IP flexion (deg)
     thumb_to_pinky_mcp: float = 0.0   # / palm size
+    # benchmark measures (benchmarks/BENCHMARK_PLAN.md 3.3)
+    aperture: float = 0.0             # mean fingertip -> wrist distance / palm size
+    tip_to_palm: dict = field(default_factory=dict)     # finger -> tip to palm centre / palm size
 
     # image space
     image_points: np.ndarray = None   # (21, 2) pixel coordinates
@@ -110,6 +113,11 @@ class HandFeatures:
     @property
     def spread_total(self):
         return float(sum(self.spread.values())) if self.spread else 0.0
+
+    @property
+    def pinch_gap(self):
+        """Thumb tip to index tip / palm size (FMA item 28 pad-to-pad)."""
+        return self.thumb_tip_dist.get("index", float("nan"))
 
     @property
     def palm_size_px(self):
@@ -261,6 +269,12 @@ def extract(obs, t, image_size, affected_hand=config.AFFECTED_HAND):
         f.thumb_tip_dist[name] = float(np.linalg.norm(w[TIPS["thumb"]] - w[TIPS[name]]) / scale)
     f.thumb_to_pinky_mcp = float(np.linalg.norm(w[TIPS["thumb"]] - w[17]) / scale)
 
+    # hand aperture and fingertips to the palm centre (FMA items 24 and 25)
+    f.aperture = float(np.mean([np.linalg.norm(w[t] - w[WRIST]) for t in TIPS.values()]) / scale)
+    centre = w[[WRIST, 5, 9, 13, 17]].mean(axis=0)
+    for name in ALL_FINGERS:
+        f.tip_to_palm[name] = float(np.linalg.norm(w[TIPS[name]] - centre) / scale)
+
     # fingertip height above the palm plane, positive towards the back of the hand
     for name in ALL_FINGERS:
         f.tip_height[name] = float(np.dot(w[TIPS[name]] - w[WRIST], -n) / scale)
@@ -273,8 +287,9 @@ def extract(obs, t, image_size, affected_hand=config.AFFECTED_HAND):
 # ---------------------------------------------------------------------------
 
 _SCALARS = ("palm_facing", "palm_size", "palm_width", "thumb_flexion",
-            "thumb_to_pinky_mcp", "palm_size_image")
-_DICTS = ("curl", "openness", "spread", "thumb_tip_dist", "tip_height", "joint_flexion")
+            "thumb_to_pinky_mcp", "palm_size_image", "aperture")
+_DICTS = ("curl", "openness", "spread", "thumb_tip_dist", "tip_height", "joint_flexion",
+          "tip_to_palm")
 _ARRAYS = ("image_points", "wrist_image", "palm_normal", "palm_normal_image")
 
 

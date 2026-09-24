@@ -281,6 +281,15 @@ class Exercise:
         """False when a calibration is clearly wrong (e.g. "open" less open than "closed")."""
         return True
 
+    # days after which the calibration is measured again
+    calibration_max_age_days = config.RECALIBRATE_AFTER_DAYS
+
+    @classmethod
+    def make_calibration(cls, therapist=None):
+        """The routine that measures her range for this exercise (None: nothing to measure)."""
+        from rehab.calibration import CalibrationRoutine
+        return CalibrationRoutine(cls) if cls.calibration_steps() else None
+
     @property
     def reps_per_set(self):
         return int(self.params.get("reps", 10))
@@ -300,6 +309,13 @@ class Exercise:
     def frame_problem(self, f):
         """Exercise-specific reason to pause (e.g. fingers not straight). Returns a Say or None."""
         return None
+
+    def quality_problem(self, f):
+        """Tracking problem as a short key (see Think.QUALITY_TEXT), or None."""
+        return f.quality_problem(self.need_palm_facing)
+
+    def skip_frame(self, now):
+        """Called for a frame with a tracking problem, which update() does not see."""
 
     def update(self, f, now):
         raise NotImplementedError

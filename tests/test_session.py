@@ -28,16 +28,36 @@ def test_profile_round_trip(tmp_path):
 def test_progress_message_last_week(tmp_path):
     old = storage.SessionLog(tmp_path / "r.csv", tmp_path / "h.csv", session_id="old",
                              today=date.today() - timedelta(days=7))
-    rec = RepRecord("grip_release", 1, 1, 0, 1, range_high=0.8, raw_high=0.50)
+    rec = RepRecord("grip_release", 1, 1, 0, 1, range_high=0.8, raw_high=0.40)
     old.save_summary(old.summarize("grip_release", [rec], 1, 10))
 
     new = storage.SessionLog(tmp_path / "r.csv", tmp_path / "h.csv", session_id="new")
-    rec2 = RepRecord("grip_release", 1, 1, 0, 1, range_high=0.9, raw_high=0.56)
+    # 0.40 -> 0.64 openness = 20 degrees less flexion per joint: big enough to claim
+    rec2 = RepRecord("grip_release", 1, 1, 0, 1, range_high=0.9, raw_high=0.64)
     row = new.summarize("grip_release", [rec2], 1, 10)
     earlier, when = new.comparison("grip_release")
     assert when == "last week"
     msg = storage.progress_message(GripRelease, row, earlier, when)
-    assert msg == "Your hand opened 12% wider than last week."
+    assert msg == "Your hand opened 60% wider than last week."
+
+
+def test_finger_progress_needs_20_degrees_or_a_trend(tmp_path):
+    """Finger angles are not validated: a small gain is not claimed, unless it keeps rising."""
+    for days, raw in ((21, 0.50), (14, 0.51), (7, 0.52)):
+        old = storage.SessionLog(tmp_path / "r.csv", tmp_path / "h.csv", session_id=f"d{days}",
+                                 today=date.today() - timedelta(days=days))
+        old.save_summary(old.summarize("grip_release",
+                                       [RepRecord("grip_release", 1, 1, 0, 1, raw_high=raw)], 1, 10))
+    new = storage.SessionLog(tmp_path / "r.csv", tmp_path / "h.csv", session_id="new")
+    earlier, when = new.comparison("grip_release")
+    rising = new.summarize("grip_release", [RepRecord("grip_release", 1, 1, 0, 1, raw_high=0.56)], 1, 10)
+    history = new.normal_history("grip_release")
+    msg = storage.progress_message(GripRelease, rising, earlier, when, history=history)
+    assert msg == "Your hand opened 8% wider than last week."
+    # the same gain after a dip is noise
+    flat = history[:1] + [dict(history[1], mean_raw_high="0.53")] + history[2:]
+    msg = storage.progress_message(GripRelease, rising, earlier, when, history=flat)
+    assert "%" not in msg
 
 
 def test_progress_message_never_negative(log):
@@ -249,7 +269,8 @@ def test_menu_number_picks_one_exercise(log):
     assert s.stage == "menu"
     items = s.view()["menu"]
     assert items[0]["text"] == "All of today's exercises" and items[0]["selected"]
-    assert [i["key"] for i in items] == [str(i) for i in range(len(config.SESSION_ORDER) + 3)]
+    assert [i["key"] for i in items] == [str(i) for i in range(len(config.SESSION_ORDER) + 4)]
+    assert items[-3]["text"] == "Arm exercises"
     assert items[-2]["text"] == "Finish for today" and items[-1]["text"] == "My profile"
     number = config.SESSION_ORDER.index("thumb_flexion") + 1
     s.on_key(str(number), clock.t)

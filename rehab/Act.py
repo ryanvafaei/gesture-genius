@@ -18,7 +18,10 @@ Speaker   non-blocking text-to-speech in its own thread, slow rate
           rep plays a soft chime.
 Display   camera image with the hand skeleton plus a side panel:
           a large bar with the target line, per-finger detail, the
-          finger sequence, and big high-contrast text; full-screen cards,
+          finger sequence, and big high-contrast text. Arm exercises show
+          the body skeleton (the trained arm highlighted), a box she should
+          sit in, and a bar in degrees with today's target (and its
+          tolerance band) and the daily-task milestones; full-screen cards,
           the summary, the garden and her profile (see ui.py). Cards, the
           summary and the profile show a small camera image, so she can see
           that her hand (and her thumbs up) is in view. Whatever is said is
@@ -40,7 +43,8 @@ import time
 import cv2
 import numpy as np
 
-from rehab import config, ui
+from rehab import body, config, ui
+from rehab.body import BodyFeatures
 from rehab.events import Event
 from rehab.exercises.base import FINGER_WORDS, Say
 from rehab.features import FINGER_LANDMARKS, GAP_NAMES, THUMB, WRIST
@@ -515,7 +519,95 @@ class Display:
         for p in pts:
             cv2.circle(frame, tuple(p), 4, BLUE, -1, cv2.LINE_AA)
 
+    def draw_body(self, frame, f, side=None):
+        """Trunk and arms; the trained arm thick. Hands seen are drawn as well."""
+        if f is None or not f.present or f.points is None:
+            return
+        pts = f.points.astype(int)
+
+        def p(name):
+            return tuple(pts[body.POSE[name]])
+
+        for a, b in body.TRUNK_LINES:
+            cv2.line(frame, p(a), p(b), WHITE, 3, cv2.LINE_AA)
+        for s in body.SIDES:
+            active = s == side
+            for a, b in body.ARM_LINES:
+                cv2.line(frame, p(f"{s}_{a}"), p(f"{s}_{b}"), CYAN if active else GREY,
+                         8 if active else 3, cv2.LINE_AA)
+            for j in ("shoulder", "elbow", "wrist"):
+                cv2.circle(frame, p(f"{s}_{j}"), 7 if active else 4, BLUE, -1, cv2.LINE_AA)
+        for hand in f.hands.values():
+            self.draw_hand(frame, hand)
+
+    def draw_box(self, frame, ok):
+        """The box she should sit in: the whole arm inside it (plan 3.1)."""
+        h, w = frame.shape[:2]
+        m = config.SETUP_EDGE_MARGIN
+        cv2.rectangle(frame, (int(m * w), int(m * h)), (int((1 - m) * w), int((1 - m) * h)),
+                      GREEN if ok else YELLOW, 4, cv2.LINE_AA)
+
     # --- panel widgets ------------------------------------------------------
+
+    def _angle(self, panel, d, top, height=360):
+        """Degrees: the value, today's target with its tolerance band, milestones, her best."""
+        x0, x1 = 60, 170
+        y_top, y_bot = top, top + height
+        lo, hi = d.get("lo", 0.0), d.get("hi", 180.0)
+        degrees = d.get("unit", "deg") == "deg"
+
+        def y_of(v):
+            u = (np.clip(v, lo, hi) - lo) / max(hi - lo, 1e-6)
+            return int(y_bot - u * (y_bot - y_top))
+
+        cv2.rectangle(panel, (x0, y_top), (x1, y_bot), GREY, 2)
+        value, target, tol = d.get("value"), d.get("target"), d.get("tolerance", 0.0)
+        sgn = 1.0 if d.get("direction", "increase") == "increase" else -1.0
+        reached = value is not None and target is not None and sgn * (value - target) >= -tol
+        if target is not None:
+            band = panel[y_of(target + tol):y_of(target - tol) + 1, x0 + 3:x1 - 2]
+            band[:] = (band * 0.5 + np.array(YELLOW) * 0.25).astype(np.uint8)
+        if value is not None:
+            cv2.rectangle(panel, (x0 + 3, y_of(value)), (x1 - 3, y_bot - 3),
+                          GREEN if reached else BLUE, -1)
+        last_label_y = None
+        for m in d.get("milestones", []):
+            y = y_of(m["deg"])
+            cv2.line(panel, (x1, y), (x1 + 18, y), WHITE, 2)
+            # close milestones (86 and 90) share one label so the numbers stay readable
+            if degrees and (last_label_y is None or abs(y - last_label_y) >= 18):
+                _text(panel, f"{m['deg']:.0f}", (x1 + 22, y + 7), 0.5, WHITE, 1)
+                last_label_y = y
+        if d.get("ceiling") is not None:
+            y = y_of(d["ceiling"])
+            cv2.line(panel, (x0 - 10, y), (x1 + 10, y), GREY, 1)
+        if target is not None:
+            y = y_of(target)
+            cv2.line(panel, (x0 - 25, y), (x1 + 25, y), YELLOW, 5)
+        if d.get("best") is not None:
+            y = y_of(d["best"])
+            cv2.line(panel, (x0 - 30, y), (x0 - 8, y), WHITE, 2)
+            _text(panel, "best", (x0 - 55, y - 8), 0.5, WHITE, 1)
+        cx, cy, r = 300, top + 90, 60
+        cv2.circle(panel, (cx, cy), r, GREY, 6)
+        if d.get("holding"):
+            cv2.ellipse(panel, (cx, cy), (r, r), -90, 0, 360 * d.get("hold_progress", 0.0), GREEN, 10)
+        _text(panel, d.get("phase_label", ""), (cx - 60, cy + r + 45), 1.1, YELLOW, 2)
+        if value is not None:
+            shown = f"{value:.0f}°" if degrees else f"{int(round(value * 100))}%"
+            _text(panel, shown, (x0 + 5, y_bot + 45), 1.1, WHITE, 2)
+        label = d.get("label", "")
+        if d.get("side"):
+            label = f"{label}, {d['side']}"
+        _text(panel, label, (x0 - 40, y_bot + 85), 0.7, GREY, 1)
+        return y_bot + 100
+
+    def _count(self, panel, d, top):
+        """A count of touches: "3 of 5" (finger to nose)."""
+        _text(panel, d.get("label", ""), (40, top + 40), 1.0, WHITE, 2)
+        _text(panel, f"{d.get('count', 0)} of {d.get('of', 0)}", (40, top + 140), 2.2, YELLOW, 4)
+        _text(panel, d.get("phase_label", ""), (40, top + 200), 1.0, CYAN, 2)
+        return top + 230
 
     def _bar(self, panel, d, top, height=360):
         x0, x1 = 60, 170
@@ -580,7 +672,8 @@ class Display:
 
     def _ring(self, panel, progress, center, radius=70, label=""):
         cv2.circle(panel, center, radius, GREY, 8)
-        cv2.ellipse(panel, center, (radius, radius), -90, 0, 360 * progress, GREEN, 12)
+        if progress > 0:
+            cv2.ellipse(panel, center, (radius, radius), -90, 0, 360 * progress, GREEN, 12)
         if label:
             size = cv2.getTextSize(label, FONT, 1.4, 3)[0]
             _text(panel, label, (center[0] - size[0] // 2, center[1] + size[1] // 2), 1.4, WHITE, 3)
@@ -612,7 +705,13 @@ class Display:
         cw, ch = self.canvas_size(frame.shape)
         view = self._words(view)
         ex = view.get("exercise_display") or {}
-        self.draw_hand(frame, features, ex.get("finger_colors"))    # in the camera's pixels
+        if isinstance(features, BodyFeatures):                      # in the camera's pixels
+            setup = view.get("setup") or {}
+            self.draw_box(frame, bool(features.present) and not setup.get("problem")
+                          and not view.get("quality"))
+            self.draw_body(frame, features, ex.get("side") or setup.get("side"))
+        else:
+            self.draw_hand(frame, features, ex.get("finger_colors"))
         text = ui.TextLayer() if ui.pillow_available() else None
         screen = view.get("screen", "exercise")
         if screen in SCREENS:
@@ -660,9 +759,14 @@ class Display:
             elif ex.get("gap_values"):
                 labels = {g: g.replace("_", "-").replace("pinky", "little") for g in GAP_NAMES}
                 top = self._finger_bars(panel, ex["gap_values"], top, GAP_COLORS, labels)
+        elif stage in ("exercise", "calibrating") and ex.get("kind") == "angle":
+            room = h - top - 70 - 80 - 60
+            top = self._angle(panel, ex, top + 10, height=int(np.clip(room, 150, 400)))
+        elif stage == "exercise" and ex.get("kind") == "count":
+            top = self._count(panel, ex, top + 10)
         elif stage == "exercise" and ex.get("kind") == "sequence":
             top = self._sequence(panel, ex, top + 10)
-        elif stage == "calibrating":
+        elif stage in ("calibrating", "setup_check"):
             self._ring(panel, view.get("progress", 0.0), (PANEL_W // 2, top + 130))
         elif stage == "rest":
             self._ring(panel, view.get("progress", 0.0), (PANEL_W // 2, top + 130),

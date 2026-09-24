@@ -1,8 +1,9 @@
 """
-Hand rehabilitation coach for Eleanor.
+Hand and arm rehabilitation coach for Eleanor.
 
     python main.py                          full session
     python main.py --exercise grip_release  one exercise (repeatable)
+    python main.py --exercise shoulder_flexion_raise   an arm exercise (body tracking)
     python main.py --video test.mp4         run on a recording instead of the webcam
     python main.py --no-speech              print instead of speaking
     python main.py --windowed               in a window instead of full screen
@@ -18,6 +19,8 @@ menu, p = her profile (from the menu; d there deletes it and starts again),
 f = full screen on / off, q or Esc = stop (what was done is kept).
 
 Wiring only: Sense -> features -> Think (Coach + SessionManager) -> Act.
+While an arm exercise runs (session.needs_body) the body is tracked too and
+Think gets BodyFeatures (arm angles, 6 Hz low-pass) instead of HandFeatures.
 Nothing imports this file.
 """
 
@@ -25,11 +28,11 @@ import argparse
 
 import cv2
 
-from rehab import config, features, storage
+from rehab import body, config, features, storage
 from rehab.Act import Display, SilentSpeaker, Speaker, screen_size
 from rehab.exercises import EXERCISES
 from rehab.feedback import Feedback
-from rehab.filters import FeatureFilter
+from rehab.filters import FeatureFilter, LowPassBank
 from rehab.Sense import Sense
 from rehab.Think import SessionManager
 
@@ -99,6 +102,11 @@ def run_session(args, sense, display):
                              character=character, delete_profile=storage.delete_profile)
     smoother = FeatureFilter(config.ONE_EURO_MIN_CUTOFF, config.ONE_EURO_BETA,
                              config.ONE_EURO_D_CUTOFF)
+    side_smoothers = {"Left": FeatureFilter(config.ONE_EURO_MIN_CUTOFF, config.ONE_EURO_BETA,
+                                            config.ONE_EURO_D_CUTOFF),
+                      "Right": FeatureFilter(config.ONE_EURO_MIN_CUTOFF, config.ONE_EURO_BETA,
+                                             config.ONE_EURO_D_CUTOFF)}
+    lowpass = LowPassBank(fs=sense.fps, fc=config.LOW_PASS_HZ)
     hand = profile.get("affected_hand", config.AFFECTED_HAND)
     t = 0.0
 
@@ -109,10 +117,14 @@ def run_session(args, sense, display):
                 return False
 
             # Sense
+            size = (frame.shape[1], frame.shape[0])
             observations = sense.observe(frame, t)
-            obs = features.choose_hand(observations, hand)
-            f = features.extract(obs, t, (frame.shape[1], frame.shape[0]), hand)
-            features.smooth(f, smoother)
+            if session.needs_body:
+                f = body_features(sense, frame, t, size, observations, side_smoothers, lowpass)
+            else:
+                obs = features.choose_hand(observations, hand)
+                f = features.extract(obs, t, size, hand)
+                features.smooth(f, smoother)
 
             # Think (thumbs up / down count from either hand)
             gestures = [(o.gesture, o.gesture_score) for o in observations if o.gesture]
@@ -131,6 +143,19 @@ def run_session(args, sense, display):
     finally:
         session.stop(t)
         speaker.close()
+
+
+def body_features(sense, frame, t, size, observations, smoothers, lowpass):
+    """BodyFeatures of this frame: pose landmarks plus each seen hand, filtered."""
+    hands = {}
+    for obs in observations:
+        if obs.handedness in smoothers and obs.handedness.lower() not in hands:
+            hf = features.extract(obs, t, size, obs.handedness)
+            hands[obs.handedness.lower()] = features.smooth(hf, smoothers[obs.handedness])
+    gesture = max(((o.gesture, o.gesture_score) for o in observations if o.gesture),
+                  key=lambda g: g[1], default=(None, 0.0))
+    f = body.extract(sense.observe_pose(frame, t), t, size, hands, gesture)
+    return body.smooth(f, lowpass)
 
 
 if __name__ == "__main__":

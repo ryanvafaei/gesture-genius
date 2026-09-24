@@ -10,8 +10,15 @@ Levels (cognitive goal):
   1  guided        index -> pinky -> index, target highlighted and spoken
   2  short memory  3 fingers shown for a few seconds, then hidden
   3+ longer        4-5 fingers, only after error-free rounds
+
+Benchmark (the plan's "pinch", FMA item 28 position): every index touch is
+also scored as a pad-to-pad pincer grasp: thumb-index gap at most 0.12 palm
+sizes (proposed) while the other fingertips stay away from the thumb. At
+most 1, because the tug on the pencil cannot be felt by a webcam. Logged per
+round as fma28_style and pinch_gap_min.
 """
 
+from rehab import benchmarks
 from rehab.features import FINGERS
 from rehab.exercises.base import (GUIDED_ORDER, CalibrationStep, Say,
                                   SequenceExercise, increases)
@@ -56,6 +63,9 @@ class ThumbOpposition(SequenceExercise):
         self._touching = None
         self._candidate = None
         self._candidate_t = None
+        self._pinch = None              # (smallest gap, other gaps) during an index touch
+        self._pinch_scores = []         # FMA 28-style score of each index touch this round
+        self._pinch_gaps = []
         self.thresholds = self._thresholds()
 
     # --- levels -------------------------------------------------------------
@@ -100,7 +110,15 @@ class ThumbOpposition(SequenceExercise):
         d = f.thumb_tip_dist
         events = []
         if self._touching:
+            if self._touching == "index":
+                gap = d["index"]
+                if self._pinch is None or gap < self._pinch[0]:
+                    self._pinch = (gap, [d[k] for k in FINGERS if k != "index"])
             if d[self._touching] > self.thresholds[self._touching][1]:
+                if self._touching == "index" and self._pinch is not None:
+                    self._pinch_gaps.append(self._pinch[0])
+                    self._pinch_scores.append(benchmarks.pinch_score(*self._pinch))
+                    self._pinch = None
                 events.append(("end", self._touching, {}))
                 self._touching = None
             return events
@@ -124,9 +142,15 @@ class ThumbOpposition(SequenceExercise):
         super().interrupt(now)
         self._touching = None
         self._candidate = None
+        self._pinch = None
 
     def round_extra(self, r):
-        return {"level": self.level}
+        extra = {"level": self.level}
+        if self._pinch_scores:
+            extra["fma28_style"] = max(self._pinch_scores)
+            extra["pinch_gap_min"] = round(min(self._pinch_gaps), 3)
+        self._pinch_scores, self._pinch_gaps = [], []
+        return extra
 
     def _make_display(self, f):
         d = super()._make_display(f)
