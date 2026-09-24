@@ -5,7 +5,7 @@ import collections
 import numpy as np
 
 from rehab import features, storage
-from rehab.Act import SpeechBase, enqueue, interrupts, next_message
+from rehab.Act import SpeechBase, drop_older, enqueue, interrupts, next_message
 from rehab.calibration import CalibrationRoutine
 from synthetic_hand import IMAGE_SIZE, hand
 
@@ -123,6 +123,12 @@ class TimedSpeaker(SpeechBase):
 
     def clear(self):
         self.items.clear()
+
+    def drop_before(self, mark):
+        drop_older(self.items, mark)
+        if self.current is not None and self.current.seq is not None and self.current.seq < mark:
+            self.cut_off.append(self.current.text)
+            self.current = None
 
     def advance(self):
         t = self.clock.t

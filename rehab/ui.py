@@ -2,8 +2,8 @@
 Act: readable screens and pictures.
 
 Text     Pillow draws all text in Atkinson Hyperlegible (assets/fonts) at a
-         large size. Text is collected during a frame and drawn in one go, so
-         the image is converted to Pillow and back only once per frame.
+         large size. Each line is rendered once and kept; every frame only
+         blends the kept letters into the image (no conversion to Pillow).
          Without Pillow or the font it falls back to OpenCV text.
 Screens  card     full screen: greetings, questions, exercise introductions
          summary  one highlight, the garden, the closing message
@@ -87,6 +87,58 @@ def pillow_available():
     return _font(20, False) is not None
 
 
+# Rendering text with Pillow is slow (about 1 ms per line), and nearly the
+# same lines are drawn every frame, so measurements, wrapped lines and the
+# rendered letters are kept and reused.
+
+@lru_cache(maxsize=4096)
+def _measure(text, size, bold):
+    font = _font(size, bold)
+    if font is None:
+        scale = size / FONT_PX_PER_SCALE
+        return cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, scale, 2 if bold else 1)[0][0]
+    return font.getlength(text)
+
+
+@lru_cache(maxsize=1024)
+def _wrap(text, size, bold, max_width):
+    lines, line = [], ""
+    for w in text.split():
+        trial = f"{line} {w}".strip()
+        if line and _measure(trial, size, bold) > max_width:
+            lines.append(line)
+            line = w
+        else:
+            line = trial
+    if line:
+        lines.append(line)
+    return tuple(lines)
+
+
+@lru_cache(maxsize=512)
+def _glyphs(text, size, bold):
+    """The text as an alpha mask (uint8) and its offset from the left end of the baseline."""
+    font = _font(size, bold)
+    left, top, right, bottom = font.getbbox(text, anchor="ls")
+    if right <= left or bottom <= top:
+        return None
+    mask = Image.new("L", (right - left, bottom - top), 0)
+    ImageDraw.Draw(mask).text((-left, -top), text, font=font, fill=255, anchor="ls")
+    return np.asarray(mask), left, top
+
+
+def _blend(img, mask, x, y, color):
+    """Paint color through mask onto img with the mask's top left corner at (x, y)."""
+    h, w = mask.shape
+    X0, Y0 = max(0, x), max(0, y)
+    X1, Y1 = min(img.shape[1], x + w), min(img.shape[0], y + h)
+    if X1 <= X0 or Y1 <= Y0:
+        return
+    a = mask[Y0 - y:Y1 - y, X0 - x:X1 - x, None].astype(np.float32) * (1.0 / 255.0)
+    region = img[Y0:Y1, X0:X1]
+    region[:] = (region * (1.0 - a) + np.asarray(color, np.float32) * a + 0.5).astype(np.uint8)
+
+
 class TextLayer:
     """
     Collects text for one frame, then draws it all at once with apply().
@@ -97,25 +149,10 @@ class TextLayer:
         self.ops = []
 
     def measure(self, text, size, bold=False):
-        font = _font(size, bold)
-        if font is None:
-            scale = size / FONT_PX_PER_SCALE
-            return cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, scale, 2 if bold else 1)[0][0]
-        return font.getlength(text)
+        return _measure(text, size, bold)
 
     def wrap(self, text, size, bold, max_width):
-        words = text.split()
-        lines, line = [], ""
-        for w in words:
-            trial = f"{line} {w}".strip()
-            if line and self.measure(trial, size, bold) > max_width:
-                lines.append(line)
-                line = w
-            else:
-                line = trial
-        if line:
-            lines.append(line)
-        return lines
+        return list(_wrap(text, size, bold, max_width))
 
     def add(self, text, xy, size, color=INK, bold=False, max_width=None, line_gap=1.3,
             align="left", max_lines=None):
@@ -149,13 +186,12 @@ class TextLayer:
                             color, 2 if bold else 1, cv2.LINE_AA)
             self.ops = []
             return img
-        pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-        draw = ImageDraw.Draw(pil)
         for text, (x, y), size, color, bold in self.ops:
-            draw.text((x, y), text, font=_font(size, bold), fill=tuple(reversed(color)),
-                      anchor="ls")
+            glyphs = _glyphs(text, size, bold)
+            if glyphs is not None:
+                mask, left, top = glyphs
+                _blend(img, mask, x + left, y + top, color)
         self.ops = []
-        img[:] = cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)
         return img
 
 

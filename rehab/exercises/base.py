@@ -73,6 +73,7 @@ class Say:
     tag: str = ""
     mood: str = None
     queued_at: float = field(default=None, repr=False, compare=False)
+    seq: int = field(default=None, repr=False, compare=False)   # order given to the speaker
 
     KIND_PRIORITY = {"quality": 1, "instruction": 2, "hint": 2, "praise": 5, "count": 5, "chime": 5}
 

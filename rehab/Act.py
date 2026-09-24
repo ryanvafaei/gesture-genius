@@ -10,8 +10,12 @@ Speaker   non-blocking text-to-speech in its own thread, slow rate
           PRAISE_MAX_WAIT_S is dropped instead of played late. Counts are
           dropped when speech is busy, and every message is checked again
           just before it is spoken: one that is out of date by then (she
-          already did what it asks) is skipped. Events from Think are worded
-          by feedback.Feedback; a successful rep plays a soft chime.
+          already did what it asks) is skipped, and one being spoken is cut
+          off by the next instruction. When she moves on (next step, an
+          answer, pause) everything said for the step she left is dropped
+          and cut off, so she only hears what belongs to what she sees.
+          Events from Think are worded by feedback.Feedback; a successful
+          rep plays a soft chime.
 Display   camera image with the hand skeleton plus a side panel:
           a large bar with the target line, per-finger detail, the
           finger sequence, and big high-contrast text; full-screen cards,
@@ -92,16 +96,39 @@ def next_message(items, now, max_wait=config.PRAISE_MAX_WAIT_S):
 
 
 def interrupts(current, msg, now):
-    """True when msg should cut off the message being spoken (praise from an earlier batch)."""
-    return (current is not None and current.kind == "praise" and msg.priority <= 2
-            and current.queued_at is not None and current.queued_at < now - BATCH_S)
+    """
+    True when msg (an instruction) should cut off the message being spoken:
+    praise from an earlier batch, or a message that is out of date by now
+    (she already did what it asks).
+    """
+    if current is None or msg.priority > 2:
+        return False
+    if not current.still_valid():
+        return True
+    return (current.kind == "praise" and current.queued_at is not None
+            and current.queued_at < now - BATCH_S)
+
+
+def drop_older(items, mark):
+    """Remove the waiting messages that were given to the speaker before mark."""
+    for m in [m for m in items if m.seq is not None and m.seq < mark]:
+        items.remove(m)
 
 
 class SpeechBase:
-    """Shared by all speakers: Think's events are worded here, chimes are played."""
+    """
+    Shared by all speakers: Think's events are worded here, chimes are played.
+
+    Every message is numbered in the order it is given. Think takes a mark()
+    before handling a frame or a key; when she moved on (next step, an
+    answer, pause) it calls drop_before(mark): what was said before is no
+    longer about what she sees or does, so it is dropped, and cut off if it
+    is being spoken. What was said for the new step (after the mark) stays.
+    """
 
     feedback = None
     mood = "neutral"
+    _seq = 0
 
     def say(self, msg):
         if isinstance(msg, (Event, list, tuple)):
@@ -112,7 +139,16 @@ class SpeechBase:
         if msg.kind == "chime":
             self.chime()
             return
+        msg.seq = self._seq
+        self._seq += 1
         self._say(msg)
+
+    def mark(self):
+        """A point in what was said, for drop_before()."""
+        return self._seq
+
+    def drop_before(self, mark):
+        """She moved on: forget, and stop saying, everything said before mark."""
 
     def say_all(self, messages):
         for m in messages or []:
@@ -158,6 +194,7 @@ class Speaker(SpeechBase):
         self._cond = threading.Condition()
         self._speaking = False
         self._current = None
+        self._cancelled = None          # the message being cut off
         self._stop = threading.Event()
         self._tts = None
         self._chime = _chime_command() if enabled else None
@@ -191,8 +228,17 @@ class Speaker(SpeechBase):
         with self._cond:
             self._items.clear()
 
+    def drop_before(self, mark):
+        with self._cond:
+            drop_older(self._items, mark)
+            current = self._current
+            if current is not None and current.seq is not None and current.seq < mark:
+                self._cut_off()
+                self.last_text = ""         # no subtitle for words she no longer hears
+
     def _cut_off(self):
-        """Stop the praise being spoken (an instruction is waiting)."""
+        """Stop the message being spoken (called with self._cond held)."""
+        self._cancelled = self._current
         if self._tts is not None:
             try:
                 self._tts.stop()
@@ -214,23 +260,30 @@ class Speaker(SpeechBase):
                     continue
                 self._speaking = True       # set together with the pop: busy never blinks off
                 self._current = msg
-            self.last_text = msg.text
-            self.last_time = time.monotonic()
-            self.mood = msg.mood or "neutral"
+                self.last_text = msg.text
+                self.last_time = time.monotonic()
+                self.mood = msg.mood or "neutral"
             try:
-                self._speak(msg.text)
+                self._speak(msg)
             finally:
                 with self._cond:
                     self._speaking = False
                     self._current = None
 
-    def _speak(self, text):
+    def _speak(self, msg):
+        def cancelled():
+            return self._cancelled is msg or self._stop.is_set()
+
+        text = msg.text
         if not self.enabled:
             print(f"[coach] {text}")
-            time.sleep(0.05 * len(text.split()) + 0.2)     # roughly paced, keeps timings realistic
+            # roughly paced, keeps timings realistic
+            end = time.monotonic() + 0.05 * len(text.split()) + 0.2
+            while time.monotonic() < end and not cancelled():
+                time.sleep(0.02)
             return
         try:
-            self._tts.speak(text)
+            self._tts.speak(text, cancelled=cancelled)
         except Exception:
             print(f"[coach] {text}")
             self.enabled = False
@@ -366,9 +419,8 @@ def _fit_scale(text, width_px, scale, thickness=2):
 
 def _band(img, y0, y1, alpha=0.6):
     """Dark translucent band so text stays readable on any camera image."""
-    overlay = img.copy()
-    cv2.rectangle(overlay, (0, y0), (img.shape[1], y1), BLACK, -1)
-    cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+    band = img[max(0, y0):max(0, y1 + 1)]   # darken only the band, not a copy of the whole image
+    band[:] = cv2.addWeighted(band, 1 - alpha, band, 0, 0)
 
 
 def _wrapped(img, text, x, y, width_px, scale=1.0, color=WHITE, thickness=2, line_gap=1.45):

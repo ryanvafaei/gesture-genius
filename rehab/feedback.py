@@ -17,6 +17,7 @@ Rules
 
 import random
 from collections import defaultdict, deque
+from dataclasses import replace
 
 from rehab import config
 from rehab.events import REP_PRAISE, Event
@@ -107,10 +108,27 @@ class Feedback:
 
     # --- events -> Say --------------------------------------------------------------
 
+    @staticmethod
+    def _once(ev, key, make):
+        """
+        Words for one event, worked out once: the phrase bank picks at random,
+        so the card, summary and garden screens must reuse what she heard.
+        """
+        memo = ev.__dict__.setdefault("_worded", {})
+        if key not in memo:
+            memo[key] = make()
+        return memo[key]
+
     def words(self, events):
         """Say messages for one event, or for the events of one rep (a list)."""
         if isinstance(events, Event):
+            if events.type != "RepCompleted":
+                said = self._once(events, "words", lambda: self._words([events]))
+                return [replace(m, seq=None, queued_at=None) for m in said]
             events = [events]
+        return self._words(events)
+
+    def _words(self, events):
         events = [e for e in events if e is not None]
         if any(e.type == "RepCompleted" for e in events):
             return self._rep_words(events)
@@ -281,6 +299,9 @@ class Feedback:
 
     def summary_lines(self, ev):
         """What the summary says: one highlight, a comparison, the activities."""
+        return list(self._once(ev, "summary", lambda: self._summary_lines(ev)))
+
+    def _summary_lines(self, ev):
         lines = []
         if ev.get("difficult"):
             lines.append(self.pick("Summary.difficult"))
@@ -297,6 +318,9 @@ class Feedback:
         return [line for line in lines if line]
 
     def garden_line(self, ev):
+        return self._once(ev, "garden", lambda: self._garden_line(ev))
+
+    def _garden_line(self, ev):
         plant = ev.get("plant")
         if ev.get("new_season"):
             text = self.pick("GardenGrew.new_season", plant=plant)
