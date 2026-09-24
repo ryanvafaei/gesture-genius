@@ -2,8 +2,10 @@
 
 A webcam coach that guides a stroke survivor through hand exercises at home. It watches the hand
 with MediaPipe, **measures** each movement against her own calibrated range, counts and checks
-every repetition, and talks her through the session in a slow, calm voice. A small garden grows
-each time she shows up.
+every repetition, and talks her through the session in a slow, calm voice. A demo hand shows
+each movement, a memory card game trains her memory, and a small garden grows each time she
+shows up. At the end she rates the session, and a report tool turns everything into numbers
+for the report.
 
 It was built for the *Socially Assistive Robots for Sport and Rehabilitation Coaching* assignment
 (see `Socially Assistive Robots for Sport and Rehabilitation Coaching.md` and
@@ -14,9 +16,10 @@ around one persona:
 > cognitive impairment (slower processing, occasional memory lapses). She wants to get back to
 > cooking and gardening and to stay independent.
 
-Everything in the app follows from that: it trains the left hand, speaks slowly and briefly, never
-needs a keyboard, remembers what she did last time, and never makes a missed day feel like a
-failure.
+Everything in the app follows from that: it trains the left hand, speaks slowly and briefly, shows
+every movement as well as saying it, never needs a keyboard, keeps Stop one key away, keeps
+important things away from the left edge of the screen, remembers what she did last time, and
+never makes a missed day feel like a failure.
 
 ---
 
@@ -35,6 +38,7 @@ failure.
 - [Code structure](#code-structure)
 - [Tests and tools](#tests-and-tools)
 - [Before the first real session](#before-the-first-real-session)
+- [At the marketplace](#at-the-marketplace)
 - [Limits](#limits)
 - [What has been built so far](#what-has-been-built-so-far)
 
@@ -438,6 +442,23 @@ text-to-speech backend choice are all tested with made-up hands.
    tapping depends heavily on the camera angle: a tilted phone stand or a camera looking down helps.
 3. For the report: record test videos, count reps by hand, and run `tools.validate` on them.
 4. Have a therapist check the exercises, sets and reps, and the activity links.
+5. Try the new parts with the real camera: holding up 1–5 fingers for a rating (the screen says
+   "I see 3 fingers"), pointing and holding still over a card in memory pairs, both hands in view
+   for two-hand match, and whether the finger-piano notes and the voice can be heard together.
+6. Fill in `HELPER_NAME` and `HELPER_PHONE` in `rehab/config.py` if the Stop screen should show a
+   person to call.
+
+## At the marketplace
+
+1. Start every visitor with `python main.py --guest --short` (add `--hand Right` for someone who
+   wants to use the right hand). Each visitor gets a fresh folder in `data/guests/`, and Eleanor's
+   own data stays untouched.
+2. Visitors play Eleanor: the coach greets them by her name, and the first-time questions are
+   skipped. They still measure their own hand once per exercise.
+3. After their session they answer the ratings on screen (guests also get "How easy was the coach
+   to use?"). Hand out a paper usability questionnaire (e.g. SUS) as well for the report.
+4. Afterwards run `python -m tools.report` and give `data/report/report.md` and the charts to
+   whoever writes the report.
 
 ---
 
@@ -455,6 +476,14 @@ text-to-speech backend choice are all tested with made-up hands.
   or family.
 - Adapting hold time instead of range is not needed: every range exercise measures range. The two
   sequence exercises keep their own levels.
+- Finger counting for the ratings needs clearly straight fingers; keys 1–5 always work. A thumbs up
+  counts as one finger.
+- Memory pairs is a memory game, not a test of cooking skills: its numbers show game practice,
+  not recovery.
+- The two-hand symmetry compares each hand with its own range, so it shows how the hands move
+  together, not whether they are equally strong.
+- The demo hand is a drawn model, not a video of a real person.
+- The Stop screen does not decide whether something is an emergency and never calls anyone.
 
 ---
 
@@ -475,7 +504,7 @@ animation) and was rebuilt step by step into the hand coach:
    a speech priority queue, a coach character, daily activity cards and milestones, the garden,
    thumbs up / down answers, and full-screen cards in Atkinson Hyperlegible.
 7. **Full screen and profile** ([PR #8](https://github.com/ryanvafaei/stroke-rehab/pull/8)): opens full screen, the camera on question cards, her profile screen.
-8. **Testing and persona fit**: ratings at the end of a session, guest mode and `tools/report.py`,
+8. **Testing and persona fit** ([PR #9](https://github.com/ryanvafaei/stroke-rehab/pull/9)): ratings at the end of a session, guest mode and `tools/report.py`,
    a demo hand for every exercise, Stop / "I don't feel well" with 112, "Exercise 2 of 7" and a
    repeat key, the finger piano, and three new exercises: bubble pinch, two-hand match and
    memory pairs.
