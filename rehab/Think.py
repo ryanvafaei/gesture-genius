@@ -36,12 +36,23 @@ Profile (menu item "My profile", or p in the menu): what the coach remembers
 about her. d asks whether to delete it; only the y key confirms (a thumbs up
 there could be an accident). After deleting, the session ends with
 `restart` set, and main starts again as on her first day.
+
+Always available
+  s  Stop / "I don't feel well": everything stops, the safety screen shows
+     the stroke warning signs and the emergency number; thumbs up (or
+     space) when she feels fine goes back to the menu. Logged for the
+     therapist. The app never decides it is an emergency and never calls.
+  r  repeat: says what belongs to this screen again.
+
+Before goodbye she rates the session from 1 to 5 (how hard, how enjoyable,
+and for guests how easy to use), with keys 1-5 or by holding up 1-5 fingers.
 """
 
 from datetime import datetime
 
 from rehab import config, memory
 from rehab import garden as garden_model
+from rehab.features import count_extended
 from rehab.calibration import CalibrationRoutine, is_stale
 from rehab.events import event
 from rehab.exercises import EXERCISES, create
@@ -55,6 +66,7 @@ QUALITY_TEXT = {
     "wrong_hand": "Please use your {hand} hand.",
     "too_far": "Please move your hand a little closer.",
     "palm_away": "Please turn your palm towards the camera.",
+    "no_other_hand": "Please show both hands to the camera.",
 }
 
 INTRO_S_PER_SENTENCE = 2.5
@@ -70,6 +82,10 @@ CARD_STAGES = QUESTION_STAGES + ("greeting", "today_plan", "intro", "goodbye")
 CONTINUE_STAGES = ("greeting", "today_plan", "intro", "rest", "summary", "garden", "goodbye")
 # her profile and the question whether to delete it
 PROFILE_STAGES = ("profile", "profile_delete")
+# stages where thumbs up / down are listened to
+YES_NO_STAGES = QUESTION_STAGES + CONTINUE_STAGES + PROFILE_STAGES + ("safety",)
+# stages where the exercise number ("Exercise 2 of 7") is shown
+STEP_STAGES = ("intro", "calibration_offer", "calibrating", "exercise", "rest")
 
 
 class YesNo:
@@ -125,6 +141,53 @@ class YesNo:
         return answer, min(1.0, max(0.0, (now - self._since) / self.hold_s))
 
 
+class FingerCount:
+    """
+    A number from 1 to 5 shown with raised fingers (either hand), held
+    steady for hold_s -> that number. Like YesNo, the hand has to come down
+    (no fingers raised) before the next answer counts.
+    """
+
+    def __init__(self, hold_s=config.RATING_HOLD_S):
+        self.hold_s = hold_s
+        self._seen = 0
+        self.reset()
+
+    def reset(self):
+        self._armed = False
+        self._value = None
+        self._since = None
+
+    @staticmethod
+    def count(f):
+        if f is None:
+            return 0
+        return max(count_extended(f), count_extended(getattr(f, "other", None)))
+
+    def update(self, f, now):
+        n = self.count(f)
+        self._seen = n
+        if n == 0:
+            self._armed = True
+            self._value = None
+            return None
+        if not self._armed:
+            return None
+        if n != self._value:
+            self._value, self._since = n, now
+            return None
+        if now - self._since >= self.hold_s:
+            self.reset()
+            return n
+        return None
+
+    def state(self, now):
+        """For the rating screen: (fingers seen, progress 0..1 of the hold, armed)."""
+        if not self._armed or self._value is None:
+            return self._seen, 0.0, self._armed
+        return self._value, min(1.0, max(0.0, (now - self._since) / self.hold_s)), True
+
+
 class Coach:
 
     def __init__(self, exercise, speaker, log, hand=config.AFFECTED_HAND, progress=None):
@@ -152,8 +215,12 @@ class Coach:
         self.speaker.say_all(self.exercise.resume_messages())
 
     def update(self, f, now):
-        self.exercise.speaking = self.speaker.busy
-        problem = f.quality_problem(self.exercise.need_palm_facing)
+        ex = self.exercise
+        ex.speaking = self.speaker.busy
+        problem = f.quality_problem(ex.need_palm_facing, need_both=ex.need_both_hands,
+                                    any_hand=ex.any_hand)
+        if problem == "no_hand" and not ex.need_hand:
+            problem = None          # e.g. the memory game also works with keys
         problem_say = None
         if problem:
             problem_say = Say(QUALITY_TEXT[problem].format(hand=self.hand), "quality")
@@ -207,7 +274,7 @@ class SessionManager:
 
     def __init__(self, speaker, profile, log, exercises=None, save_profile=None,
                  garden=None, save_garden=None, character=None, activities=None,
-                 delete_profile=None):
+                 delete_profile=None, short=False, rating_questions=config.RATING_QUESTIONS):
         self.speaker = speaker
         self.profile = profile
         self.log = log
@@ -219,8 +286,14 @@ class SessionManager:
         self.activities = activities if activities is not None else load_content("activities")
         self.progress = SessionProgress(profile, log)
         self.yes_no = YesNo()
+        self.finger_count = FingerCount()
+        self.short = short                  # one short set per exercise (guests)
+        self.rating_questions = tuple(rating_questions or ())
+        self.ratings = {}                   # question -> 1..5 ("" when skipped)
+        self._rating_index = None           # None: not asked yet
+        self._safety = False                # Stop / "I don't feel well" was pressed
         # today's plan, the menu's "all" item
-        self.today = [n for n in config.SESSION_ORDER if should_do_today(n, log)]
+        self.today = [n for n in config.DAILY_PLAN if should_do_today(n, log)]
         # chosen explicitly: no day schedule and no menu
         self.fixed = bool(exercises)
         self.plan = list(exercises) if exercises else []
@@ -292,19 +365,27 @@ class SessionManager:
         return now - max(self._stage_t, self._quiet_t)
 
     def _build_exercise(self):
+        cls = EXERCISES[self.name]
+        hand = self.profile.get("affected_hand", config.AFFECTED_HAND)
         kwargs = {}
-        if self.name == "thumb_opposition" and self.profile["levels"].get(self.name):
+        if cls.uses_level and self.profile["levels"].get(self.name):
             kwargs["level"] = self.profile["levels"][self.name]
+        if cls.need_both_hands:
+            kwargs["hand"] = hand
         target = self.progress.start_target(self.name)
         thresholds = {self.name: {"high": target}} if target is not None else None
         sets = config.EXERCISES.get(self.name, {}).get("sets", 3)
+        params = {"sets": self.progress.sets_for(self.name, sets)}
+        if self.short:
+            short = config.SHORT_SESSION
+            params["sets"] = min(params["sets"], short["sets"])
+            # range exercises count reps; sequences and games count rounds
+            params["reps"] = short["reps"] if getattr(cls, "range_steps", ()) else short["rounds"]
         self.exercise = create(self.name, calibrations(self.profile), thresholds,
-                               params={"sets": self.progress.sets_for(self.name, sets)}, **kwargs)
+                               params=params, **kwargs)
         self._target_start = target if target is not None else float("nan")
         self.activity = memory.activity_for(self.name, self.profile, self.activities)
-        self.coach = Coach(self.exercise, self.speaker, self.log,
-                           self.profile.get("affected_hand", config.AFFECTED_HAND),
-                           progress=self.progress)
+        self.coach = Coach(self.exercise, self.speaker, self.log, hand, progress=self.progress)
 
     def _gestures(self, f, gestures):
         if gestures is not None:
@@ -340,10 +421,31 @@ class SessionManager:
     # --- keys -------------------------------------------------------------------
 
     def on_key(self, key, now):
-        """key: " ", "up", "down", "m", "p", "d", "y", "n" or a digit."""
+        """key: " ", "up", "down", "m", "p", "d", "y", "n", "e", "s", "r" or a digit."""
         self._handle(self._on_key, key, now)
 
     def _on_key(self, key, now):
+        if key == "s" and self.stage not in ("start", "safety", "profile_deleted"):
+            self._open_safety(now)
+            return
+        if key == "r":
+            self._repeat(now)
+            return
+        if self.stage == "safety":
+            if key in (" ", "y"):
+                self._after_safety(now)
+            return
+        if self.stage == "rating":
+            if key in "12345" and len(key) == 1:
+                self._rate(int(key), now)
+            elif key == " ":
+                self._rate(None, now)
+            return
+        if (self.stage == "exercise" and key.isdigit() and not self.paused
+                and hasattr(self.exercise, "select")):
+            # memory game: keys 1-8 turn a card over
+            self.speaker.say_all(self.exercise.select(int(key) - 1, now, affected=False))
+            return
         if self.stage == "menu":
             self._menu_key(key, now)
             return
@@ -419,11 +521,21 @@ class SessionManager:
         if self.speaker.busy:
             self._quiet_t = now
         answer = None
-        if self.stage in QUESTION_STAGES + CONTINUE_STAGES + PROFILE_STAGES:
+        if self.stage in YES_NO_STAGES:
             answer = self.yes_no.update(seen, now)
         stage = self.stage
         if stage == "start":
             self._begin(now)
+        elif stage == "safety":
+            # stays until she says she feels fine; never moves on by itself
+            if answer == "yes":
+                self._after_safety(now)
+        elif stage == "rating":
+            fingers = self.finger_count.update(f, now)
+            if fingers:
+                self._rate(min(5, fingers), now)
+            elif self._quiet_for(now) >= config.RATING_TIMEOUT_S:
+                self._rate(None, now)
         elif stage in QUESTION_STAGES:
             timeout = (config.CHECK_IN_TIMEOUT_S if stage == "check_in"
                        else config.QUESTION_TIMEOUT_S)
@@ -459,7 +571,8 @@ class SessionManager:
         elif stage == "calibrating":
             step = self.calibration.step
             need_palm = step.need_palm_facing if step else False
-            problem = f.quality_problem(need_palm)
+            problem = f.quality_problem(need_palm, need_both=bool(step and step.need_both_hands),
+                                        any_hand=EXERCISES[self.name].any_hand)
             self.speaker.say_all(self.calibration.update(f, now, quality_ok=problem is None,
                                                          speaking=self.speaker.busy))
             self._quality = (QUALITY_TEXT[problem].format(hand=self.coach.hand)
@@ -609,9 +722,14 @@ class SessionManager:
             self.menu_index = (self.menu_index + 1) % len(self.menu)
         elif key == " ":
             self._choose(self.menu[self.menu_index], now)
-        elif key.isdigit() and int(key) < len(self.menu):
+        elif key.isdigit() and int(key) < len(self.menu) and self.menu[int(key)] not in (
+                FINISH, PROFILE):
+            # 0 = all of today's, 1-9 = the exercises
             self.menu_index = int(key)
             self._choose(self.menu[self.menu_index], now)
+        elif key == "e":
+            self.menu_index = self.menu.index(FINISH)
+            self._choose(FINISH, now)
         elif key == "p":
             self._choose(PROFILE, now)
 
@@ -715,6 +833,9 @@ class SessionManager:
                                  valid=lambda: self._cal_problem == problem))
 
     def _calibration_check(self, now):
+        if not EXERCISES[self.name].calibration_steps():
+            self._start_exercise(now)       # nothing to measure (e.g. the memory game)
+            return
         entry = self.profile["calibration"].get(self.name)
         # a wrong stored calibration (e.g. open/closed swapped) reverses every
         # prompt of the exercise, so it is measured again like a missing one
@@ -790,7 +911,7 @@ class SessionManager:
         events = self.progress.exercise_finished(ex, row, self.activity, completed)
         if self.activity and self.activity not in self._practised:
             self._practised.append(self.activity)
-        if ex.name == "thumb_opposition":
+        if getattr(ex, "uses_level", False):
             self.profile["levels"][ex.name] = ex.level
         self.save_profile(self.profile)
         return events
@@ -850,12 +971,91 @@ class SessionManager:
     # --- closing: garden and goodbye ---------------------------------------------------------
 
     def _finish_session(self, now):
+        if self.progress.completed and self.rating_questions and self._rating_index is None:
+            # how was it? (1-5), before the garden
+            self._rating_index = 0
+            self._ask_rating(now)
+            return
         if self.progress.completed and garden_model.needs_new_plant(self.garden):
             self._plant_options = garden_model.plant_options(self.garden)
             first, second = self._plant_options
             self._card(event("PlantQuestion", first=first, second=second), "plant_choice", now)
         else:
             self._water_and_end(now, None)
+
+    # --- ratings (1-5): how hard, how enjoyable, how easy to use ----------------------
+
+    def _ask_rating(self, now):
+        key = self.rating_questions[self._rating_index]
+        self.finger_count.reset()
+        self._card(event("RatingQuestion", key=key, first=self._rating_index == 0), "rating", now)
+
+    def _rate(self, value, now):
+        """value: 1..5, or None (skipped or no answer)."""
+        key = self.rating_questions[self._rating_index]
+        self.ratings[key] = value if value else ""
+        if value:
+            self.speaker.say(event("RatingThanks"))
+        self._rating_index += 1
+        if self._rating_index < len(self.rating_questions):
+            self._ask_rating(now)
+        else:
+            self._finish_session(now)
+
+    # --- Stop / "I don't feel well" ---------------------------------------------------
+
+    def _open_safety(self, now):
+        """Stop everything, keep what was done, and show the safety screen."""
+        self._record_unfinished()
+        self._safety = True
+        self.paused = False
+        self.calibration = None
+        self._quality = None
+        self._after_rest = None
+        self.speaker.clear()
+        self._card(event("SafetyStop"), "safety", now)
+
+    def _after_safety(self, now):
+        """She feels fine: back to the menu (or on to the summary / goodbye)."""
+        self.speaker.clear()
+        self._say("All right. Take your time.")
+        self.exercise = None
+        self.coach = None
+        if self._ended:
+            self._goodbye(now)
+        elif self.fixed:
+            self._finish(now)
+        else:
+            self._open_menu(now)
+
+    # --- repeat ----------------------------------------------------------------------
+
+    def _repeat(self, now):
+        """Say again what belongs to the screen she is on (R key)."""
+        stage = self.stage
+        self.speaker.clear()
+        if stage in CARD_STAGES + ("rating", "safety", "profile_delete", "profile_deleted"):
+            if self._card_event is not None:
+                self.speaker.say(self._card_event)
+            if stage == "intro":
+                self._say(*EXERCISES[self.name].instructions)
+        elif stage == "calibration_offer":
+            self._say("Press the space bar if you'd like to measure your hand again.")
+        elif stage == "calibrating" and self.calibration:
+            self.speaker.say_all(self.calibration.resume(now))
+        elif stage == "exercise" and self.exercise:
+            self.speaker.say_all(self.exercise.resume_messages())
+        elif stage == "rest":
+            self._say("Rest your hand. Thumbs up or the space bar when you're ready.")
+        elif stage == "menu":
+            self._say("Press a number to choose an exercise, "
+                      "or press the space bar to do all of today's exercises.")
+        elif stage == "summary" and self._summary_event is not None:
+            self.speaker.say(self._summary_event)
+        elif stage == "garden" and self._garden_event is not None:
+            self.speaker.say(self._garden_event)
+        elif stage == "profile":
+            self.speaker.say(event("ProfileOverview"))
 
     def _water_and_end(self, now, plant):
         grew = self.end_session(plant)
@@ -895,9 +1095,10 @@ class SessionManager:
             self.log.mark_difficult()
         row = self._session_row(grew)
         if self.progress.repeated_difficult_days(self.log.sessions()):
-            row["note"] = (f"{config.DIFFICULT_REPEAT_COUNT} or more of the last "
-                           f"{config.DIFFICULT_REPEAT_WINDOW} sessions were difficult days. "
-                           "Please ask her therapist to take a look.")
+            row["note"] = " ".join(n for n in (row["note"], (
+                f"{config.DIFFICULT_REPEAT_COUNT} or more of the last "
+                f"{config.DIFFICULT_REPEAT_WINDOW} sessions were difficult days. "
+                "Please ask her therapist to take a look.")) if n)
         self.log.save_session(row)
         self.save_profile(self.profile)
         return grew
@@ -925,7 +1126,9 @@ class SessionManager:
             "highlight": best.type + (f":{best.get('level')}" if best.get("level") else "")
             if best else "",
             "garden": f"{grew.get('plant')}:{grew.get('stage')}" if grew else "",
-            "note": "",
+            "note": "She pressed Stop / I don't feel well." if self._safety else "",
+            "safety_stop": "yes" if self._safety else "no",
+            **{key: self.ratings.get(key, "") for key in ("exertion", "enjoyment", "ease")},
         }
 
     def stop(self, now):
@@ -957,7 +1160,14 @@ class SessionManager:
             "activity": self.activity if self.stage in (
                 "intro", "calibration_offer", "calibrating", "exercise", "rest") else None,
             "difficult_day": self.progress.difficult,
+            "exercise": self.name,
+            "hand": self.profile.get("affected_hand", config.AFFECTED_HAND),
         }
+        if self.stage in STEP_STAGES and len(self.plan) > 1 and 0 <= self.index < len(self.plan):
+            v["step_label"] = f"Exercise {self.index + 1} of {len(self.plan)}"
+        if self.stage == "intro" and self.name:
+            # the demo hand on the card loops through the movement
+            v["demo"] = {"exercise": self.name, "t": self._t - self._stage_t}
         answer, progress = self.yes_no.state(self._t)
         v["gesture"] = {"hand": self._hand_seen, "answer": answer, "progress": progress}
         if not self.fixed and self.stage not in ("start", "menu"):
@@ -979,7 +1189,8 @@ class SessionManager:
             step = self.calibration.step
             v["instruction"] = step.screen_text if step else "Thank you"
             v["progress"] = self.calibration.progress
-            v["status"] = "Measuring your hand"
+            v["status"] = (f"Measuring: step {self.calibration.index + 1} of "
+                           f"{len(self.calibration.steps)}" if step else "Measuring your hand")
             v["quality"] = self._quality
         elif self.stage == "rest":
             left = max(0, int(round(self._rest_s - (self._t - self._stage_t))))
@@ -1009,13 +1220,15 @@ class SessionManager:
             v["title"] = "Choose an exercise"
             v["footer"] = "Up/Down: choose  Space: start"
             v["menu"] = [{
-                "key": str(i),
+                "key": "E" if item == FINISH else "P" if item == PROFILE else str(i),
                 "text": ("All of today's exercises" if item == ALL else
                          "Finish for today" if item == FINISH else
                          "My profile" if item == PROFILE else EXERCISES[item].title),
                 "selected": i == self.menu_index,
-                "note": "" if item in (ALL, FINISH, PROFILE) or item in self.today else "not today",
+                # every-other-day exercises that are not planned today
+                "note": "not today" if item in config.DAILY_PLAN and item not in self.today else "",
             } for i, item in enumerate(self.menu)]
+            v["footer"] = "Space: start   E: finish"
         elif self.stage == "profile":
             coach = self.profile.get("coach_name")
             v["screen"] = "profile"
@@ -1029,4 +1242,18 @@ class SessionManager:
             v["card_event"] = self._card_event
             v["footer"] = ("Y: delete   N, Space or thumbs down: keep"
                            if self.stage == "profile_delete" else "")
+        elif self.stage == "rating":
+            fingers, held, armed = self.finger_count.state(self._t)
+            v["screen"] = "rating"
+            v["card_event"] = self._card_event
+            v["rating"] = {"fingers": fingers, "progress": held, "armed": armed,
+                           "question": self._rating_index + 1, "questions": len(self.rating_questions)}
+            v["footer"] = "Keys 1-5 or show fingers   Space: skip"
+        elif self.stage == "safety":
+            v["screen"] = "safety"
+            v["card_event"] = self._card_event
+            v["footer"] = "Thumbs up or Space: I feel fine   Q: finish for today"
+        if self.stage not in ("start", "safety", "profile_delete", "profile_deleted"):
+            v["footer"] = (v["footer"] + "   R: repeat").strip()
+            v["stop_hint"] = True           # "S: Stop - I don't feel well" on every screen
         return v

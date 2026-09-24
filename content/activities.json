@@ -55,6 +55,30 @@
         "gardening": {"sentence": "Carrying a watering can.", "intro": "This practises carrying your watering can."},
         "cooking":   {"sentence": "Carrying a shopping bag.", "intro": "This practises carrying your shopping bag."}
       }
+    },
+    "bubble_pinch": {
+      "part": "thumb and index finger", "what": "pinches",
+      "activities": ["dressing", "cooking"],
+      "links": {
+        "dressing": {"sentence": "Doing up buttons.", "intro": "This practises doing up your buttons."},
+        "cooking":  {"sentence": "Picking up a pinch of salt.", "intro": "This practises picking up a pinch of salt."}
+      }
+    },
+    "two_hand_match": {
+      "part": "hands", "what": "two-handed movements",
+      "activities": ["cooking", "gardening"],
+      "links": {
+        "cooking":   {"sentence": "Holding a bowl while you stir.", "intro": "This practises holding a bowl while you stir."},
+        "gardening": {"sentence": "Holding a plant pot with both hands.", "intro": "This practises holding a plant pot with both hands."}
+      }
+    },
+    "memory_pairs": {
+      "part": "memory", "what": "memory games",
+      "activities": ["cooking", "phone"],
+      "links": {
+        "cooking": {"sentence": "Remembering where things are in the kitchen.", "intro": "This practises remembering where things are in the kitchen."},
+        "phone":   {"sentence": "Remembering where you put things.", "intro": "This practises remembering where you put things."}
+      }
     }
   }
 }

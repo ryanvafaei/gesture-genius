@@ -9,6 +9,8 @@ Screens  card     full screen: greetings, questions, exercise introductions
          summary  one highlight, the garden, the closing message
          garden   the garden with today's growth (short animation)
          profile  what the coach remembers about her, and "delete my profile"
+         rating   a 1-5 question at the end (keys or fingers held up)
+         safety   Stop / "I don't feel well": warning signs and 112
          Cards, the summary and the profile show her camera image small
          (draw_camera), with what the coach sees: her hand, a thumbs up or
          down being held, or nothing yet.
@@ -30,7 +32,8 @@ from functools import lru_cache
 import cv2
 import numpy as np
 
-from rehab import config
+from rehab import config, demo
+from rehab.features import HAND_CONNECTIONS
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -574,7 +577,7 @@ def _camera_size(frame, max_w, max_h):
     return int(fw * k), int(fh * k)
 
 
-def draw_camera(img, frame, box, gesture, text, size=28):
+def draw_camera(img, frame, box, gesture, text, size=28, label=None):
     """
     Her camera image, fitted in box (x0, y0, x1, y1) at its top, so she can
     see that her hand is in view. The border and the line below say what the
@@ -595,7 +598,9 @@ def draw_camera(img, frame, box, gesture, text, size=28):
     if held:
         bar = max(10, h // 18)
         cv2.rectangle(img, (x, y0 + h - bar), (x + int(w * progress), y0 + h), color, -1)
-    if answer == "yes":
+    if label is not None:
+        ink = INK
+    elif answer == "yes":
         label, ink = "Thumbs up - hold it there", GREEN
     elif answer == "no":
         label, ink = "Thumbs down - hold it there", INK
@@ -609,6 +614,46 @@ def draw_camera(img, frame, box, gesture, text, size=28):
     text.add(label, (x + w / 2, baseline), size, ink, bold=held, align="center",
              max_width=max(w, 200), max_lines=1)
     return baseline + int(size * 0.45)
+
+
+# ---------------------------------------------------------------------------
+# Demo hand and the stop hint (shared by several screens)
+# ---------------------------------------------------------------------------
+
+DEMO_BG = (248, 250, 252)
+DEMO_INK = (70, 70, 70)
+STOP_BG = (60, 60, 60)
+
+
+def draw_demo_hand(img, points_list, color=DEMO_INK, width=None, box=None, background=DEMO_BG):
+    """The demo hand(s) as calm lines, on a light panel when box is given."""
+    if box is not None and background is not None:
+        x0, y0, x1, y1 = [int(v) for v in box]
+        cv2.rectangle(img, (x0, y0), (x1, y1), background, -1, cv2.LINE_AA)
+        cv2.rectangle(img, (x0, y0), (x1, y1), (215, 220, 225), 2, cv2.LINE_AA)
+    for pts in points_list:
+        pts = np.asarray(pts)
+        span = float(np.ptp(pts[:, 1])) if len(pts) else 0.0
+        w = width or max(2, int(span / 40))
+        for a, b in HAND_CONNECTIONS:
+            cv2.line(img, (int(pts[a][0]), int(pts[a][1])), (int(pts[b][0]), int(pts[b][1])),
+                     color, w, cv2.LINE_AA)
+        for i in (4, 8, 12, 16, 20):             # fingertips
+            cv2.circle(img, (int(pts[i][0]), int(pts[i][1])), w + 1, color, -1, cv2.LINE_AA)
+
+
+def draw_stop_hint(img, text, label, right, bottom, size=26):
+    """
+    "S: Stop - I don't feel well", in the same place on every screen:
+    bottom right, never at the left edge (spatial neglect). Calm, not red.
+    """
+    if not label:
+        return
+    w = int(text.measure(label, size, True)) + 40
+    h = int(size * 1.9)
+    x0, y0 = int(right - w), int(bottom - h)
+    cv2.rectangle(img, (x0, y0), (int(right), int(bottom)), STOP_BG, -1, cv2.LINE_AA)
+    text.add(label, (x0 + 20, y0 + h * 0.66), size, WHITE, bold=True)
 
 
 def card_screen(size, view, text, character=None):
@@ -637,6 +682,8 @@ def card_screen(size, view, text, character=None):
     x = int(w * 0.36)
     right = w - 60
     y = int(h * 0.2)
+    if view.get("step_label"):
+        text.add(view["step_label"], (x, y - 70), 30, SOFT, bold=True)
     if card.get("icon"):
         draw_icon(img, card["icon"], (right - 110, int(h * 0.24)), 170, GREEN)
         right -= 240
@@ -644,6 +691,15 @@ def card_screen(size, view, text, character=None):
                  max_lines=3) + 40
     y = text.add(card.get("message", ""), (x, y + 20), 46, INK, max_width=w - 60 - x,
                  max_lines=3) + 30
+    d = view.get("demo")
+    if d and not card.get("yes_no"):
+        # the movement, looping, in the free space under the words
+        box = (x, int(y + 10), w - 60, h - 100)
+        if box[3] - box[1] >= 140:
+            pad = 12
+            inner = (box[0] + pad, box[1] + pad, box[2] - pad, box[3] - pad)
+            draw_demo_hand(img, demo.demo_points(d["exercise"], d.get("t", 0.0), inner,
+                                                 view.get("hand", "Left")), box=box)
     if card.get("options"):
         for i, (label, chosen) in enumerate(card["options"]):
             cy = int(y + 30 + i * 62)
@@ -657,8 +713,10 @@ def card_screen(size, view, text, character=None):
     if can and can.get("sections"):
         # above the answers when there are any, so it never covers one
         can_y = h - 300 if card.get("yes_no") else h - 110
-        draw_can(img, (w - 110, can_y), 110, can["sections"], can.get("filled", 0))
+        if not view.get("demo"):
+            draw_can(img, (w - 110, can_y), 110, can["sections"], can.get("filled", 0))
     text.add(view.get("footer", ""), (40, h - 30), 26, SOFT)
+    draw_stop_hint(img, text, view.get("stop_hint"), w - 30, h - 14)
     return img
 
 
@@ -674,7 +732,8 @@ def garden_screen(size, view, text, character=None):
     season = g.get("state", {}).get("season", 1)
     if season > 1:
         text.add(f"Season {season}", (w - 60, 90), 30, SOFT, align="right")
-    text.add(view.get("footer", ""), (w - 40, h - 20), 24, SOFT, align="right")
+    text.add(view.get("footer", ""), (w - 40, h - 86), 24, SOFT, align="right")
+    draw_stop_hint(img, text, view.get("stop_hint"), w - 30, h - 14)
     return img
 
 
@@ -699,8 +758,9 @@ def summary_screen(size, view, text, character=None):
         y = text.add(line, (240, y), 34, INK, max_width=width, max_lines=2) + 18
     g = view.get("garden") or {}
     if g.get("state"):
-        draw_garden(img, (240, max(y + 20, int(h * 0.5)), w - 60, h - 70), g["state"])
+        draw_garden(img, (240, max(y + 20, int(h * 0.5)), w - 60, h - 80), g["state"])
     text.add(view.get("footer", ""), (40, h - 25), 26, SOFT)
+    draw_stop_hint(img, text, view.get("stop_hint"), w - 30, h - 14)
     return img
 
 
@@ -744,5 +804,101 @@ def profile_screen(size, view, text, character=None):
     labels = view.get("answer_labels")
     if labels:
         _answer_row(img, text, h - 150, w / 2, labels)
+    text.add(view.get("footer", ""), (40, h - 30), 26, SOFT)
+    draw_stop_hint(img, text, view.get("stop_hint"), w - 30, h - 14)
+    return img
+
+
+RATING_FILL = (215, 200, 170)       # neutral: no red / green judgement
+
+
+def rating_screen(size, view, text, character=None):
+    """
+    A 1-5 question: five large numbered boxes with a word under each. The box
+    for the fingers she holds up fills while she holds; keys 1-5 answer too.
+    """
+    w, h = size
+    img = np.full((h, w, 3), BG, np.uint8)
+    card = view.get("card", {})
+    r = view.get("rating") or {}
+    face_x = int(w * 0.17)
+    camera = view.get("camera")
+    if camera is not None:
+        cam_w, cam_h = _camera_size(camera, int(w * 0.30) - 40, int(h * 0.36))
+        y1 = h - 110
+        fingers = r.get("fingers", 0)
+        label = (f"I see {fingers} finger{'s' if fingers != 1 else ''}" if fingers and r.get("armed")
+                 else "Lower your hand first" if fingers else "Hold up 1 to 5 fingers")
+        draw_camera(img, camera, (face_x - cam_w / 2, y1 - cam_h, face_x + cam_w / 2, y1),
+                    view.get("gesture"), text, label=label)
+        draw_face(img, (face_x, int((y1 - cam_h) / 2)), int(min(h * 0.14, (y1 - cam_h - 60) / 2.4)),
+                  view.get("mood", "neutral"), character)
+    else:
+        draw_face(img, (face_x, int(h * 0.35)), int(h * 0.16), view.get("mood", "neutral"), character)
+    x = int(w * 0.34)
+    right = w - 60
+    if r.get("questions", 1) > 1:
+        text.add(f"Question {r.get('question', 1)} of {r['questions']}", (x, int(h * 0.12)), 30,
+                 SOFT, bold=True)
+    y = text.add(card.get("title", ""), (x, int(h * 0.2)), 56, INK, bold=True, max_width=right - x,
+                 max_lines=2) + 50
+    labels = card.get("scale") or [""] * 5
+    gap = 18
+    box_w = (right - x - gap * 4) / 5
+    box_h = int(min(190, h * 0.28))
+    held = r.get("fingers") if r.get("armed") else None
+    for i in range(5):
+        x0 = int(x + i * (box_w + gap))
+        x1 = int(x0 + box_w)
+        y0, y1 = int(y), int(y + box_h)
+        cv2.rectangle(img, (x0, y0), (x1, y1), WHITE, -1, cv2.LINE_AA)
+        if held == i + 1:
+            fill = int((y1 - y0) * float(r.get("progress", 0.0)))
+            cv2.rectangle(img, (x0, y1 - fill), (x1, y1), RATING_FILL, -1)
+        cv2.rectangle(img, (x0, y0), (x1, y1), INK if held == i + 1 else GREY,
+                      6 if held == i + 1 else 2, cv2.LINE_AA)
+        text.add(str(i + 1), (x0 + box_w / 2, y0 + box_h * 0.48), 72, INK, bold=True, align="center")
+        text.add(labels[i] if i < len(labels) else "", (x0 + box_w / 2, y0 + box_h * 0.8), 26, INK,
+                 align="center", max_width=box_w - 10, max_lines=2)
+    text.add(card.get("message", ""), (x, y + box_h + 60), 34, SOFT, max_width=right - x, max_lines=2)
+    text.add(view.get("footer", ""), (40, h - 30), 26, SOFT)
+    draw_stop_hint(img, text, view.get("stop_hint"), w - 30, h - 14)
+    return img
+
+
+def safety_screen(size, view, text, character=None):
+    """
+    Stop / "I don't feel well": rest, the stroke warning signs, and the
+    emergency number in large type. The app never calls anyone itself.
+    """
+    w, h = size
+    img = np.full((h, w, 3), BG, np.uint8)
+    card = view.get("card", {})
+    draw_face(img, (int(w * 0.1), int(h * 0.2)), int(h * 0.1), "neutral", character)
+    x = int(w * 0.2)
+    box_x0 = int(w * 0.66)
+    y = text.add(card.get("title", ""), (x, int(h * 0.15)), 60, INK, bold=True,
+                 max_width=box_x0 - x - 40) + 30
+    y = text.add(card.get("message", ""), (x, y + 10), 34, INK, max_width=box_x0 - x - 40,
+                 max_lines=2) + 30
+    for sign in card.get("signs", []):
+        cv2.circle(img, (x + 10, int(y + 10 - 11)), 7, INK, -1, cv2.LINE_AA)
+        y = text.add(sign, (x + 34, y + 10), 32, INK, max_width=box_x0 - x - 80, max_lines=1) + 18
+    # the number, large, in a box
+    bx0, by0, bx1 = box_x0, int(h * 0.12), w - 60
+    by1 = int(h * 0.62)
+    cv2.rectangle(img, (bx0, by0), (bx1, by1), WHITE, -1, cv2.LINE_AA)
+    cv2.rectangle(img, (bx0, by0), (bx1, by1), INK, 6, cv2.LINE_AA)
+    cx = (bx0 + bx1) / 2
+    text.add(card.get("number", config.EMERGENCY_NUMBER), (cx, by0 + (by1 - by0) * 0.42), 130, INK,
+             bold=True, align="center")
+    yy = text.add(card.get("number_line", ""), (cx, by0 + (by1 - by0) * 0.62), 32, INK,
+                  align="center", max_width=bx1 - bx0 - 40, max_lines=2)
+    if card.get("helper"):
+        text.add(card["helper"], (cx, yy + 30), 30, INK, bold=True, align="center",
+                 max_width=bx1 - bx0 - 40, max_lines=2)
+    labels = card.get("answer_labels")
+    if labels:
+        _answer_row(img, text, h - 170, w / 2, labels)
     text.add(view.get("footer", ""), (40, h - 30), 26, SOFT)
     return img
