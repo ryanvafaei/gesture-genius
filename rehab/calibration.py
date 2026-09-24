@@ -51,6 +51,11 @@ class CalibrationRoutine:
         return self._i >= len(self.steps)
 
     @property
+    def index(self):
+        """The current step, counted from 0."""
+        return max(0, self._i)
+
+    @property
     def step(self):
         return self.steps[self._i] if 0 <= self._i < len(self.steps) else None
 

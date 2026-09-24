@@ -104,6 +104,7 @@ class TimedSpeaker(SpeechBase):
         self.heard = []           # (time, text) in the order she hears them
         self.cut_off = []         # texts interrupted by an instruction
         self.chimes = 0
+        self.notes = []
         self.last_text = ""
 
     @property
@@ -120,6 +121,9 @@ class TimedSpeaker(SpeechBase):
 
     def chime(self):
         self.chimes += 1
+
+    def note(self, i):
+        self.notes.append(i)
 
     def clear(self):
         self.items.clear()

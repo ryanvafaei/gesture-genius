@@ -15,7 +15,8 @@ Speaker   non-blocking text-to-speech in its own thread, slow rate
           answer, pause) everything said for the step she left is dropped
           and cut off, so she only hears what belongs to what she sees.
           Events from Think are worded by feedback.Feedback; a successful
-          rep plays a soft chime.
+          rep plays a soft chime, and in thumb opposition every correct
+          touch plays the next note of a tune (sound.py).
 Display   camera image with the hand skeleton plus a side panel:
           a large bar with the target line, per-finger detail, the
           finger sequence, and big high-contrast text; full-screen cards,
@@ -26,6 +27,10 @@ Display   camera image with the hand skeleton plus a side panel:
           The window opens full screen and every screen is drawn in the
           shape of the screen (see canvas_size), so nothing falls off the edge;
           the window scales it to fit.
+          Also drawn here: a still demo hand of the position to reach, the
+          bubble between thumb and finger (bubble pinch), two bars for two
+          hands, the memory game's cards over the camera image, and the
+          "S: Stop" hint at the bottom right of every screen.
 """
 
 import collections
@@ -40,11 +45,12 @@ import time
 import cv2
 import numpy as np
 
-from rehab import config, ui
+from rehab import config, demo, ui
 from rehab.events import Event
 from rehab.exercises.base import FINGER_WORDS, Say
 from rehab.features import FINGER_LANDMARKS, GAP_NAMES, THUMB, WRIST
 from rehab.feedback import Feedback
+from rehab.sound import Notes
 from rehab.tts_util import make_tts
 
 # ---------------------------------------------------------------------------
@@ -139,6 +145,9 @@ class SpeechBase:
         if msg.kind == "chime":
             self.chime()
             return
+        if msg.kind == "note":
+            self.note(msg.note or 0)       # finger piano: at once, never queued
+            return
         msg.seq = self._seq
         self._seq += 1
         self._say(msg)
@@ -164,6 +173,9 @@ class SpeechBase:
         raise NotImplementedError
 
     def chime(self):
+        pass
+
+    def note(self, i):
         pass
 
 
@@ -198,6 +210,7 @@ class Speaker(SpeechBase):
         self._stop = threading.Event()
         self._tts = None
         self._chime = _chime_command() if enabled else None
+        self._notes = Notes(enabled=enabled)
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -222,6 +235,9 @@ class Speaker(SpeechBase):
                 subprocess.Popen(self._chime, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except OSError:
                 self._chime = None
+
+    def note(self, i):
+        self._notes.play(i)
 
     def clear(self):
         """Forget everything not yet spoken (e.g. on pause)."""
@@ -302,6 +318,7 @@ class SilentSpeaker(SpeechBase):
         self.feedback = feedback
         self.spoken = []
         self.chimes = 0
+        self.notes = []
         self.last_text = ""
         self.last_time = 0.0
 
@@ -320,6 +337,9 @@ class SilentSpeaker(SpeechBase):
 
     def chime(self):
         self.chimes += 1
+
+    def note(self, i):
+        self.notes.append(i)
 
     def clear(self):
         pass
@@ -349,7 +369,11 @@ GAP_COLORS = {"index_middle": (80, 180, 255), "middle_ring": (120, 220, 120), "r
 PANEL_W = 420
 # full-screen pictures (ui.py); the camera screen is drawn here
 SCREENS = {"card": ui.card_screen, "summary": ui.summary_screen, "garden": ui.garden_screen,
-           "profile": ui.profile_screen}
+           "profile": ui.profile_screen, "rating": ui.rating_screen, "safety": ui.safety_screen}
+# pair bars (two-hand match): the affected hand in blue, the leading hand grey
+PAIR_COLORS = {"left": BLUE, "right": (170, 170, 170)}
+CARD_BACK = (96, 150, 76)
+POINTER = CYAN
 
 
 def screen_size():
@@ -376,6 +400,14 @@ def screen_size():
         if w >= 320 and h >= 240:
             return w, h
     return None
+
+
+def fit_rect(frame_shape, w, h):
+    """Where fit() puts the frame inside (w, h): (x0, y0, width, height)."""
+    fh, fw = frame_shape[:2]
+    k = min(w / fw, h / fh)
+    nw, nh = max(1, int(round(fw * k))), max(1, int(round(fh * k)))
+    return (w - nw) // 2, (h - nh) // 2, nw, nh
 
 
 def fit(frame, w, h, background=DARK):
@@ -440,6 +472,17 @@ def _wrapped(img, text, x, y, width_px, scale=1.0, color=WHITE, thickness=2, lin
     return y + len(textwrap.wrap(text, per_line)) * h * line_gap
 
 
+class _PanelText:
+    """ui.draw_stop_hint's text calls, routed to the frame's text layer at the panel's offset."""
+
+    def measure(self, text, size, bold=False):
+        return _LAYER["text"].measure(text, size, bold)
+
+    def add(self, text, xy, size, color, bold=False):
+        panel_x = max(_LAYER["offsets"].values(), default=0)
+        _LAYER["text"].add(text, (xy[0] + panel_x, xy[1]), size, color, bold=bold)
+
+
 class Display:
 
     def __init__(self, window="Hand coach", character=None, feedback=None, screen=None,
@@ -491,6 +534,8 @@ class Display:
             v["garden"] = dict(v.get("garden") or {}, line=line)
         if v.get("activity"):
             v["activity_icon"] = self.feedback.activity_info(v["activity"]).get("icon")
+        if v.get("stop_hint"):
+            v["stop_hint"] = self.feedback.first("StopHint") or "S: Stop"
         return v
 
     # --- skeleton -----------------------------------------------------------
@@ -514,6 +559,81 @@ class Display:
                 cv2.circle(frame, tuple(pts[chain[-1]]), 22, CYAN, 4, cv2.LINE_AA)
         for p in pts:
             cv2.circle(frame, tuple(p), 4, BLUE, -1, cv2.LINE_AA)
+
+    def draw_overlay(self, frame, f, ex):
+        """Pictures tied to her hand, in the camera's pixels (the bubble between thumb and finger)."""
+        bubble = ex.get("bubble")
+        if not bubble or f is None or not f.present or f.image_points is None:
+            return
+        tip_t, tip_i = f.image_points[4], f.image_points[8]
+        centre = tuple(int(v) for v in (tip_t + tip_i) / 2)
+        r0 = max(18.0, 0.45 * f.palm_size_px)
+        now, popped = bubble.get("now"), bubble.get("popped_t")
+        if popped is not None and now is not None and 0 <= now - popped < 0.6:
+            # the pop: a ring that grows and a few sparkles
+            u = (now - popped) / 0.6
+            cv2.circle(frame, centre, int(r0 * (0.6 + u)), (250, 230, 200), 2, cv2.LINE_AA)
+            for k in range(8):
+                a = k * np.pi / 4
+                p0 = (int(centre[0] + np.cos(a) * r0 * (0.8 + u)), int(centre[1] + np.sin(a) * r0 * (0.8 + u)))
+                p1 = (int(centre[0] + np.cos(a) * r0 * (1.1 + u)), int(centre[1] + np.sin(a) * r0 * (1.1 + u)))
+                cv2.line(frame, p0, p1, (250, 230, 200), 3, cv2.LINE_AA)
+            return
+        if not bubble.get("pinching"):
+            return
+        r = int(r0 * (1.0 - 0.6 * float(bubble.get("hold_progress", 0.0))))
+        layer = frame.copy()
+        cv2.circle(layer, centre, r, (245, 225, 190), -1, cv2.LINE_AA)
+        cv2.addWeighted(layer, 0.35, frame, 0.65, 0, frame)
+        cv2.circle(frame, centre, r, (250, 235, 205), 3, cv2.LINE_AA)
+        cv2.circle(frame, (centre[0] - r // 3, centre[1] - r // 3), max(3, r // 6), WHITE, -1,
+                   cv2.LINE_AA)
+
+    def _cards(self, frame, ex, rect):
+        """The memory game's cards over the camera image; rect = where the image lies."""
+        x0, y0, iw, ih = rect
+        under = frame.copy()                # the cards let her hand show through a little
+        for card in ex.get("cards", []):
+            cx0, cy0, cx1, cy1 = card["rect"]
+            p0 = (int(x0 + cx0 * iw), int(y0 + cy0 * ih))
+            p1 = (int(x0 + cx1 * iw), int(y0 + cy1 * ih))
+            centre = ((p0[0] + p1[0]) // 2, (p0[1] + p1[1]) // 2)
+            size = int(min(p1[0] - p0[0], p1[1] - p0[1]) * 0.6)
+            if card["state"] == "down":
+                cv2.rectangle(frame, p0, p1, CARD_BACK, -1, cv2.LINE_AA)
+                cv2.rectangle(frame, p0, p1, WHITE, 4, cv2.LINE_AA)
+                _text(frame, card["key"], (p0[0] + 14, p0[1] + 40), 1.0, WHITE, 2)
+                if card.get("dwell"):
+                    r = size // 3
+                    cv2.circle(frame, centre, r, WHITE, 4, cv2.LINE_AA)
+                    cv2.ellipse(frame, centre, (r, r), -90, 0, 360 * card["dwell"], YELLOW, 10,
+                                cv2.LINE_AA)
+            else:
+                cv2.rectangle(frame, p0, p1, WHITE, -1, cv2.LINE_AA)
+                border = GREEN if card["state"] == "matched" else GREY
+                cv2.rectangle(frame, p0, p1, border, 8 if card["state"] == "matched" else 3,
+                              cv2.LINE_AA)
+                ui.draw_icon(frame, card["icon"], centre, size, ui.INK)
+        cv2.addWeighted(frame, 0.82, under, 0.18, 0, frame)
+        if ex.get("pointer") is not None:
+            px, py = ex["pointer"]
+            cv2.circle(frame, (int(x0 + px * iw), int(y0 + py * ih)), 16, POINTER, 4, cv2.LINE_AA)
+
+    def _still_demo(self, frame, view, ex):
+        """What to do now as a small picture, at the right of the camera image."""
+        key, name = ex.get("demo_key"), view.get("exercise")
+        if not key or not name:
+            return
+        h, w = frame.shape[:2]
+        size = 170 if name not in demo.TWO_HANDS else 150
+        width = size if name not in demo.TWO_HANDS else 2 * size
+        box = (w - width - 15, 430, w - 15, min(h - 140, 430 + size))
+        if box[3] - box[1] < 100:
+            return
+        points = demo.phase_points(name, key, (box[0] + 10, box[1] + 10, box[2] - 10, box[3] - 10),
+                                   view.get("hand", "Left"))
+        if points:
+            ui.draw_demo_hand(frame, points, box=box)
 
     # --- panel widgets ------------------------------------------------------
 
@@ -560,19 +680,22 @@ class Display:
             x += 85
         return top + 130
 
-    def _sequence(self, panel, d, top):
+    def _sequence(self, panel, d, top, bottom=None):
         seq, step = d.get("sequence", []), d.get("step", 0)
         y = top
+        row = 60
+        if bottom is not None and seq:
+            row = int(np.clip((bottom - top - 50) / len(seq), 36, 60))
         for i, finger in enumerate(seq):
             done = i < step
             current = i == step
             label = "?" if d.get("hidden") and not done else FINGER_WORDS[finger].replace(" finger", "")
             filled = done or (current and not d.get("hidden"))
             color = GREEN if done else (CYAN if filled else GREY)
-            cv2.rectangle(panel, (40, y), (PANEL_W - 40, y + 50), color, -1 if filled else 2)
-            cv2.putText(panel, label.upper(), (60, y + 37), FONT, 1.0,
+            cv2.rectangle(panel, (40, y), (PANEL_W - 40, y + row - 10), color, -1 if filled else 2)
+            cv2.putText(panel, label.upper(), (60, y + int(row * 0.62)), FONT, min(1.0, row / 60),
                         BLACK if filled else WHITE, 2, cv2.LINE_AA)
-            y += 60
+            y += row
         if "level" in d:
             _text(panel, f"Level {d['level']}", (40, y + 35), 0.9, WHITE, 2)
             y += 50
@@ -586,23 +709,34 @@ class Display:
             _text(panel, label, (center[0] - size[0] // 2, center[1] + size[1] // 2), 1.4, WHITE, 3)
 
     def _menu(self, frame, items):
-        """The exercise list, large, over the camera image."""
+        """The exercise list, large, over the camera image (two columns when it is long)."""
         h, w = frame.shape[:2]
         top, bottom = 90, h - 150
         _band(frame, top - 10, bottom + 10, 0.7)
-        row = int(min(72, (bottom - top) / max(1, len(items))))
-        scale = row / 55
+        cols = 2 if len(items) > 8 else 1
+        per_col = -(-len(items) // cols)
+        row = int(min(72, (bottom - top) / max(1, per_col)))
+        # leave the right edge free for the coach's face
+        col_w = (w - 150) / cols
+        text_w = col_w - (10 if cols > 1 else 0) - 30 - int(70 * row / 55) - 15
+        # one text size for the whole menu: the longest item decides
+        scale = min((_fit_scale(item["text"], text_w, row / 55) for item in items), default=row / 55)
         for i, item in enumerate(items):
-            y = top + i * row
+            c, r = divmod(i, per_col)
+            x0 = int(30 + c * col_w)
+            x1 = int(x0 + col_w - (10 if cols > 1 else 0))
+            y = top + r * row
+            text_x = x0 + 30 + int(70 * row / 55)
             if item["selected"]:
-                cv2.rectangle(frame, (30, y + 4), (w - 30, y + row - 4), CYAN, -1)
+                cv2.rectangle(frame, (x0, y + 4), (x1, y + row - 4), CYAN, -1)
             color = BLACK if item["selected"] else WHITE
             base = y + int(row * 0.7)
-            _text(frame, item["key"], (60, base), scale, YELLOW if not item["selected"] else BLACK, 3)
-            _text(frame, item["text"], (60 + int(70 * scale), base), scale, color, 2)
+            _text(frame, item["key"], (x0 + 30, base), row / 55,
+                  YELLOW if not item["selected"] else BLACK, 3)
+            _text(frame, item["text"], (text_x, base), scale, color, 2)
             if item.get("note"):
                 size = cv2.getTextSize(item["note"], FONT, scale * 0.7, 1)[0]
-                _text(frame, item["note"], (w - 60 - size[0], base), scale * 0.7,
+                _text(frame, item["note"], (x1 - 30 - size[0], base), scale * 0.7,
                       BLACK if item["selected"] else GREY, 1)
 
     # --- whole screen -------------------------------------------------------
@@ -613,6 +747,7 @@ class Display:
         view = self._words(view)
         ex = view.get("exercise_display") or {}
         self.draw_hand(frame, features, ex.get("finger_colors"))    # in the camera's pixels
+        self.draw_overlay(frame, features, ex)
         text = ui.TextLayer() if ui.pillow_available() else None
         screen = view.get("screen", "exercise")
         if screen in SCREENS:
@@ -623,6 +758,7 @@ class Display:
             return layer.apply(canvas)
 
         camera = fit(frame, cw - PANEL_W, ch)
+        view["camera_rect"] = fit_rect(frame.shape, cw - PANEL_W, ch)
         panel = np.full((ch, PANEL_W, 3), DARK, dtype=np.uint8)
         _LAYER["text"] = text
         _LAYER["offsets"] = {id(camera): 0, id(panel): cw - PANEL_W}
@@ -646,13 +782,25 @@ class Display:
         if view.get("status"):
             _text(panel, view["status"], (20, 120), 0.9, YELLOW, 2)
         top = 150
+        if view.get("step_label"):
+            _text(panel, view["step_label"], (20, 155), 0.75, GREY, 1)
+            top = 175
+        # the stop hint sits at the bottom of the panel, above the key help
+        stop_top = h - 100 if view.get("stop_hint") else h - 45
 
         stage = view.get("stage")
         if stage == "exercise" and ex.get("kind") == "bar":
-            detail = ex.get("finger_values") or ex.get("gap_values")
-            room = h - top - 70 - 80 - (140 if detail else 0)
+            detail = ex.get("finger_values") or ex.get("gap_values") or ex.get("pair_values")
+            room = stop_top - top - 70 - 35 - (140 if detail else 0)
             top = self._bar(panel, ex, top + 10, height=int(np.clip(room, 150, 400)))
-            if ex.get("finger_values"):
+            if ex.get("pair_values"):
+                colors = {k: PAIR_COLORS.get(k, GREY) for k in ex["pair_values"]}
+                labels = {k: k for k in ex["pair_values"]}
+                self._finger_bars(panel, ex["pair_values"], top, colors, labels)
+                if ex.get("symmetry") is not None:
+                    _text(panel, f"Together: {int(round(ex['symmetry'] * 100))}%", (210, top + 60),
+                          0.8, WHITE, 2)
+            elif ex.get("finger_values"):
                 colors = {k: (ORANGE if ex["finger_colors"].get(k) == "lagging" else BLUE)
                           for k in ex["finger_values"]}
                 labels = {k: FINGER_WORDS[k].replace(" finger", "") for k in ex["finger_values"]}
@@ -661,7 +809,14 @@ class Display:
                 labels = {g: g.replace("_", "-").replace("pinky", "little") for g in GAP_NAMES}
                 top = self._finger_bars(panel, ex["gap_values"], top, GAP_COLORS, labels)
         elif stage == "exercise" and ex.get("kind") == "sequence":
-            top = self._sequence(panel, ex, top + 10)
+            top = self._sequence(panel, ex, top + 10, bottom=stop_top - 10)
+        elif stage == "exercise" and ex.get("kind") == "cards":
+            _text(panel, f"Level {ex.get('level', 1)}", (40, top + 50), 1.0, WHITE, 2)
+            _text(panel, f"Pairs found: {ex.get('found', 0)} of {ex.get('pairs', 0)}",
+                  (40, top + 110), 0.9, YELLOW, 2)
+            _wrapped(panel, "Point and hold still, or press the number on the card.", 40, top + 170,
+                     PANEL_W - 80, 0.7, GREY, 1)
+            self._cards(frame, ex, view.get("camera_rect") or (0, 0, w, h))
         elif stage == "calibrating":
             self._ring(panel, view.get("progress", 0.0), (PANEL_W // 2, top + 130))
         elif stage == "rest":
@@ -681,8 +836,14 @@ class Display:
         can = view.get("can")
         if can and can.get("sections") and view.get("stage") != "menu":
             ui.draw_can(frame, (w - 80, 375), 80, can["sections"], can.get("filled", 0))
+        if stage == "exercise" and ex.get("kind") != "cards":
+            self._still_demo(frame, view, ex)
 
-        _text(panel, view.get("footer", ""), (20, h - 25), 0.7, GREY, 1)
+        _text(panel, view.get("footer", ""), (20, h - 25), _fit_scale(view.get("footer", ""),
+                                                                      PANEL_W - 60, 0.7, 1), GREY, 1)
+        if view.get("stop_hint") and _LAYER["text"] is not None:
+            # drawn in canvas coordinates: the panel starts where the camera column ends
+            ui.draw_stop_hint(panel, _PanelText(), view["stop_hint"], PANEL_W - 15, h - 48, size=22)
 
         # big instruction at the bottom of the camera image
         instruction = view.get("instruction") or ex.get("prompt") or ""

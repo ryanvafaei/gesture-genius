@@ -64,6 +64,12 @@ def long_date(d):
     return f"{d.day} {d.strftime('%B %Y')}"
 
 
+def _measurable():
+    """Exercises that measure her hand first (the memory game needs no measuring)."""
+    from rehab.exercises import EXERCISES
+    return sum(1 for name in config.SESSION_ORDER if EXERCISES[name].calibration_steps())
+
+
 def profile_overview(profile, garden, sessions, activities):
     """
     Everything the coach remembers about her, as (label, value) rows for the
@@ -101,7 +107,7 @@ def profile_overview(profile, garden, sessions, activities):
         ("Favourite activities", join_words(chosen) if chosen else "Not chosen yet"),
         ("Profile started", long_date(started) if started else "Unknown"),
         ("Sessions", sessions_text),
-        ("Hand measured", f"For {measured} of {len(config.SESSION_ORDER)} exercises"
+        ("Hand measured", f"For {measured} of {_measurable()} exercises"
                           if measured else "Not yet"),
         ("Personal bests", str(bests) if bests else "None yet"),
         ("Practice", ", ".join(f"{name}: {n} rep{'s' if n != 1 else ''}" for name, n in practice[:3])
