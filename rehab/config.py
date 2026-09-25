@@ -179,11 +179,8 @@ FATIGUE_DROP = 0.80
 # Session order
 # ---------------------------------------------------------------------------
 
-# The main menu: 1 today's routine, 2 hand exercises, 3 arm exercises,
-# 4 memory exercises, 5 finish for today, and her profile (P). Each group
-# opens its own menu, numbered from 1, with "Back" as the last number.
-# "Hand exercises", in this order.
-HAND_MENU = [
+# The menu, in this order (keys 1-9).
+SESSION_ORDER = [
     "grip_release",
     "finger_abduction",
     "thumb_flexion",
@@ -192,14 +189,9 @@ HAND_MENU = [
     "grip_squeeze",
     "bubble_pinch",
     "two_hand_match",
-]
-# "Memory exercises" (memory and thinking), in this order.
-MEMORY_MENU = [
     "memory_pairs",
 ]
-# every hand and memory exercise (the arm exercises: ARM_EXERCISES)
-SESSION_ORDER = HAND_MENU + MEMORY_MENU
-# "Continue to your daily routine": the six hand exercises and the memory game as a
+# "All of today's exercises": the six hand exercises and the memory game as a
 # restful end. Bubble pinch and two-hand match are in the menu only.
 DAILY_PLAN = [
     "grip_release",
@@ -509,17 +501,6 @@ GUEST_RATING_QUESTIONS = ("exertion", "enjoyment", "ease")
 RATING_HOLD_S = 1.5
 RATING_VOTE_S = 0.5            # finger counts are voted over this window (tracking noise)
 RATING_TIMEOUT_S = 25
-
-# Choosing from a menu without a keyboard: point at an item with the index
-# finger (only the index finger raised) and hold still, or hold up its
-# number of fingers (both hands add up, for 6 to 10). Either way the hand
-# has to come down between two choices.
-MENU_DWELL_S = 1.5             # pointing: keep the fingertip on the item this long
-MENU_HOLD_S = 1.5              # a number of fingers, held steady this long
-# where the menu lies over the camera image, as fractions (x0, y0, x1, y1):
-# away from the left edge (spatial neglect), the coach's face at the right,
-# the subtitle at the top and the instruction at the bottom
-MENU_AREA = (0.18, 0.12, 0.88, 0.8)
 
 # Stop / "I don't feel well" (S key): the safety screen can show a person to
 # call. Empty = not shown. The app never calls anyone itself.
