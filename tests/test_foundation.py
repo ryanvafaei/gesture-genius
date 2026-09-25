@@ -80,6 +80,44 @@ def test_choose_hand_prefers_affected_hand():
     assert features.choose_hand([], "Left") is None
 
 
+def _at(obs, dx):
+    obs.image = obs.image + np.array([dx, 0.0, 0.0])
+    return obs
+
+
+def test_pair_hands_uses_position_when_labels_agree():
+    # MediaPipe labels both hands "Left": in the mirrored image her left is on the left
+    a, b = _at(hand(), -0.3), _at(hand(), 0.25)
+    for order in ([a, b], [b, a]):
+        left, right = features.pair_hands(order, "Left", mirror=True)
+        assert left.image[0][0] < right.image[0][0]
+        assert (left.handedness, right.handedness) == ("Left", "Right")
+    affected, other = features.pair_hands([a, b], "Right", mirror=True)
+    assert affected.image[0][0] > other.image[0][0] and affected.handedness == "Right"
+    left, right = features.pair_hands([a, b], "Left", mirror=False)
+    assert left.image[0][0] > right.image[0][0]
+
+
+def test_pair_hands_one_hand_and_duplicates():
+    left = hand()
+    assert features.pair_hands([left], "Left") == (left, None)
+    assert features.pair_hands([], "Left") == (None, None)
+    twice = _at(hand(handedness="Right"), 0.005)                # the same hand detected twice
+    affected, other = features.pair_hands([twice, left], "Left")
+    assert other is None and affected is not None
+
+
+def test_both_hands_are_drawn():
+    from rehab.Act import Display
+    f = features.extract(_at(hand(), -0.25), 0, IMAGE_SIZE)
+    f.other = features.extract(_at(hand(handedness="Right"), 0.2), 0, IMAGE_SIZE)
+    frame = np.zeros((IMAGE_SIZE[1], IMAGE_SIZE[0], 3), np.uint8)
+    Display(screen=None).render(frame, {}, f)
+    for h in (f, f.other):
+        x, y = h.image_points[0].astype(int)
+        assert frame[y - 3:y + 4, x - 3:x + 4].any()
+
+
 def test_smoothing_reduces_jitter():
     rng = np.random.default_rng(1)
     filt = FeatureFilter(min_cutoff=1.0, beta=0.05)

@@ -234,10 +234,9 @@ def run_session(args, sense, display):
             if session.needs_body:
                 f = body_features(sense, frame, t, size, observations, side_smoothers, lowpass)
             else:
-                obs = features.choose_hand(observations, hand)
+                obs, other = features.pair_hands(observations, hand, sense.mirror)
                 f = features.extract(obs, t, size, hand)
                 features.smooth(f, smoother)
-                other = features.choose_other(observations, obs)
                 if other is not None:
                     f.other = features.smooth(features.extract(other, t, size, hand), smoother_other)
 
@@ -278,8 +277,8 @@ def run_session(args, sense, display):
 def body_features(sense, frame, t, size, observations, smoothers, lowpass):
     """BodyFeatures of this frame: pose landmarks plus each seen hand, filtered."""
     hands = {}
-    for obs in observations:
-        if obs.handedness in smoothers and obs.handedness.lower() not in hands:
+    for obs in features.pair_hands(observations, "Left", sense.mirror):
+        if obs is not None and obs.handedness in smoothers:
             hf = features.extract(obs, t, size, obs.handedness)
             hands[obs.handedness.lower()] = features.smooth(hf, smoothers[obs.handedness])
     gesture = max(((o.gesture, o.gesture_score) for o in observations if o.gesture),
