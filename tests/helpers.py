@@ -154,14 +154,3 @@ class TimedSpeaker(SpeechBase):
 
     def close(self):
         pass
-
-
-def choose(session, name, t):
-    """Choose an exercise from the menus with keys, as she would: its group, then its number."""
-    from rehab.Think import GROUP_STAGES
-    for group, stage in GROUP_STAGES.items():
-        if name in session.menus[stage]:
-            session.on_key(str(session.menus["menu"].index(group) + 1), t)
-            session.on_key(str(session.menus[stage].index(name) + 1), t)
-            return
-    raise KeyError(name)

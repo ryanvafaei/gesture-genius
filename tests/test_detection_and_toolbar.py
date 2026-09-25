@@ -15,7 +15,7 @@ from rehab.Act import Display, SilentSpeaker
 from rehab.exercises.finger_tapping import FingerTapping
 from rehab.exercises.thumb_opposition import ThumbOpposition
 from rehab.Think import FingerCount, SessionManager
-from helpers import OPPOSITION_POSES, Clock, FPS, answer, calibrate, choose, feat, returning_profile, run
+from helpers import OPPOSITION_POSES, Clock, FPS, answer, calibrate, feat, returning_profile, run
 from tools.report_job import ReportJob
 
 FIST = dict(flex=(80, 95, 60), thumb_out=0.0)
@@ -227,7 +227,7 @@ def test_skip_an_exercise_goes_to_the_next_one(log):
 
 def test_skip_the_only_exercise_shows_the_summary(log):
     s, clock = menu_session(log)
-    choose(s, "grip_release", clock.t)
+    s.on_key("1", clock.t)
     s.on_key("k", clock.t)
     assert s.stage == "summary"
     assert "Skipped: grip_release." in s._session_row(None)["note"]
@@ -270,7 +270,7 @@ def test_toolbar_is_hidden_and_only_in_the_menu(log):
     assert s.short is False
     s.on_key("i", clock.t)
     assert s.view()["toolbar"]["open"] is True
-    choose(s, "grip_release", clock.t)                          # an exercise: no toolbar
+    s.on_key("1", clock.t)                                      # an exercise: no toolbar
     assert s.stage == "intro" and "toolbar" not in s.view() and s.toolbar_open is False
 
 
@@ -280,7 +280,7 @@ def test_toolbar_short_toggle_changes_the_next_exercise(log):
     s.on_click("short", clock.t)
     assert s.short is True
     assert [i["on"] for i in s.view()["toolbar"]["items"] if i["id"] == "short"] == [True]
-    choose(s, "grip_release", clock.t)
+    s.on_key("1", clock.t)
     assert s.exercise.sets == 1 and s.exercise.reps_per_set == config.SHORT_SESSION["reps"]
 
 

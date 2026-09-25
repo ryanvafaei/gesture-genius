@@ -13,24 +13,17 @@ Hand and arm rehabilitation coach for Eleanor.
     python main.py --guest --hand Right     a visitor who trains the right hand
     python main.py --verbose                log every frame, event and the camera video
                                             for tuning calibration, detection and
-                                            tracking (rehab/verbose.py); always a new
-                                            guest with short sets, and the report and
-                                            the log's summary are made when the app
-                                            closes (q, the window's close button,
-                                            Ctrl+C or a kill)
+                                            tracking (rehab/verbose.py)
 
 It opens with a greeting and a check-in ("How is your hand feeling today?"),
 answered with thumbs up / thumbs down (or space = yes, n = no). Without
---exercise it then shows the menu: 1 continue to the daily routine, 2 hand
-exercises, 3 arm exercises, 4 memory exercises, 5 end for today (the garden
-and goodbye), P her profile. The groups open their own menus, numbered
-from 1 with Back last. An item is chosen with its key (or up/down and
-space), by pointing at it with the index finger and holding still, or by
-holding up its number of fingers (both hands add up: 6 to 10).
+--exercise it then shows a menu: press a number (or up/down and space) to
+pick one exercise, space for all of today's exercises, or "Finish for today"
+to see the garden and say goodbye.
 
 Keys: space = start / pause / continue, y / n = yes / no, m = back to the
 menu, p = her profile (from the menu; d there deletes it and starts again),
-e = end for today (menu), s = Stop / "I don't feel well", r = repeat,
+e = finish for today (menu), s = Stop / "I don't feel well", r = repeat,
 k = skip (the exercise, or the rest), 1-5 = rating answers,
 1-8 = cards in the memory game, f = full screen on / off,
 q or Esc = stop (what was done is kept).
@@ -51,7 +44,6 @@ Nothing imports this file.
 """
 
 import argparse
-import signal
 import time
 
 import cv2
@@ -89,11 +81,7 @@ def parse_args():
                         "the camera video to <data>/verbose/<user>_<session>/")
     p.add_argument("--no-video", action="store_true",
                    help="with --verbose: do not record the camera video")
-    args = p.parse_args()
-    if args.verbose:
-        # tuning runs: always a new guest (her data stays clean) with short sets
-        args.guest = args.short = True
-    return args
+    return p.parse_args()
 
 
 def report_target(guest_id):
@@ -108,30 +96,6 @@ def make_report(guest_id):
     """The toolbar's report: this guest's, or everyone's while she is the user."""
     folder, out, user = report_target(guest_id)
     return report_job.start_background(folder, out, user=user)
-
-
-def _terminate(signum, frame):
-    """A kill (SIGTERM, SIGHUP): stop like Ctrl+C, so the session is saved and reported."""
-    raise KeyboardInterrupt
-
-
-def final_reports(args, reported):
-    """
-    When the app closes: the report of the guest still in the chair (when
-    the guest's session did not end normally, e.g. Ctrl+C), and with
-    --verbose also her report while she is the user, and each verbose log's
-    summary (tools/verbose_summary.py).
-    """
-    jobs = []
-    if args.guest_id and args.guest_id not in reported:
-        jobs.append(guest_report(args.guest_id, config.DATA_DIR))
-    elif args.verbose and not args.guest_id:
-        folder, out, user = report_target(None)
-        jobs.append(report_job.start_background(folder, out, open_when_done=False, user=user))
-    if args.verbose:
-        jobs += [report_job.verbose_summary(folder) for folder in args.verbose_logs
-                 if folder.is_dir()]
-    return jobs
 
 
 def guest_report(guest_id, folder):
@@ -165,12 +129,7 @@ def key_name(code):
 def main():
     args = parse_args()
     args.guest_id = None
-    args.verbose_logs = []          # --verbose: the log folder of each session
     seen, jobs = [], []             # guests of this run; their reports being made
-    reported = set()                # guests whose report was started
-    for name in ("SIGTERM", "SIGHUP"):
-        if hasattr(signal, name):   # not on Windows
-            signal.signal(getattr(signal, name), _terminate)
     if args.guest:
         args.guest_id, folder = guests.start_guest(args.hand)
         seen.append((args.guest_id, folder))
@@ -183,7 +142,6 @@ def main():
             result = run_session(args, sense, display)
             if args.guest_id:
                 jobs.append(guest_report(args.guest_id, config.DATA_DIR))
-                reported.add(args.guest_id)
             if result in ("new_guest", "main_profile"):
                 # toolbar: a new session for a new guest, or back in her own folder
                 if result == "new_guest":
@@ -196,17 +154,14 @@ def main():
             elif not result:
                 break
             # else her profile was deleted: the first questions again
-    except KeyboardInterrupt:
-        print("Stopped.")
     finally:
         sense.close()
         display.close()
-        jobs += final_reports(args, reported)
         for guest_id, folder in seen:
             print(f"{guest_id}: data in {folder}")
         waiting = [j for j in jobs if j is not None and j.status()[0] == "running"]
         if waiting:
-            print("Making the reports ...")
+            print("Making the guests' reports ...")
             for job in waiting:
                 job.wait()
         for job in jobs:
@@ -242,7 +197,6 @@ def run_session(args, sense, display):
                                                          "levels", "targets", "guest_id")}},
             video=not args.no_video, fps=sense.fps, mirrored=sense.mirror)
         speaker.on_spoken = lambda text: vlog.event("speech", text=text)
-        args.verbose_logs.append(vlog.folder)
         print(f"Verbose log: {vlog.folder}")
     session = SessionManager(speaker, profile, log, exercises=args.exercise,
                              save_profile=storage.save_profile,
@@ -304,7 +258,7 @@ def run_session(args, sense, display):
             key = key_name(cv2.waitKeyEx(1))
             if vlog and key in ("q", "f"):
                 vlog.event("key", t, key=key, stage=session.stage)
-            if key == "q" or display.closed():
+            if key == "q":
                 return False
             if key == "f":
                 display.toggle_fullscreen()

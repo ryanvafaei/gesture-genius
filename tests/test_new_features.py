@@ -18,7 +18,7 @@ from rehab.exercises.memory_pairs import MemoryPairs
 from rehab.exercises.thumb_opposition import ThumbOpposition
 from rehab.exercises.two_hand_match import TwoHandMatch
 from rehab.Think import FingerCount, SessionManager
-from helpers import (OPPOSITION_POSES, Clock, answer, calibrate, choose, feat, returning_profile, run,
+from helpers import (OPPOSITION_POSES, Clock, answer, calibrate, feat, returning_profile, run,
                      texts)
 from synthetic_hand import IMAGE_SIZE, hand
 
@@ -199,7 +199,7 @@ def test_memory_pairs_levels_up_after_good_boards():
 
 def test_memory_pairs_starts_without_measuring_and_takes_number_keys(log):
     s, clock = menu_session(log)
-    choose(s, "memory_pairs", clock.t)
+    s.on_key(str(config.SESSION_ORDER.index("memory_pairs") + 1), clock.t)
     for _ in range(int(12 * 30)):
         t = clock.tick()
         s.update(feat(t), t)
@@ -272,11 +272,7 @@ def test_daily_plan_and_menu_keys(log):
     assert "memory_pairs" in s.today
     assert "bubble_pinch" not in s.today and "two_hand_match" not in s.today
     keys = [i["key"] for i in s.view()["menu"]]
-    assert keys == ["1", "2", "3", "4", "5", "P"]
-    s.on_key("2", clock.t)                   # hand exercises
-    assert s.stage == "hand_menu"
-    keys = [i["key"] for i in s.view()["menu"]]
-    assert keys == [str(i) for i in range(1, len(config.HAND_MENU) + 2)]
+    assert keys[:10] == [str(i) for i in range(10)] and keys[-2:] == ["E", "P"]
     s.on_key("8", clock.t)
     assert s.plan == ["two_hand_match"]
     s.on_key("m", clock.t)
@@ -286,16 +282,16 @@ def test_daily_plan_and_menu_keys(log):
 
 def test_short_session_uses_one_short_set(log):
     s, clock = menu_session(log, short=True)
-    choose(s, "grip_release", clock.t)
+    s.on_key("1", clock.t)
     assert s.exercise.sets == 1 and s.exercise.reps_per_set == config.SHORT_SESSION["reps"]
     s.on_key("m", clock.t)
-    choose(s, "thumb_opposition", clock.t)
+    s.on_key(str(config.SESSION_ORDER.index("thumb_opposition") + 1), clock.t)
     assert s.exercise.reps_per_set == config.SHORT_SESSION["rounds"]
 
 
 def test_step_label_during_a_plan(log):
     s, clock = menu_session(log)
-    s.on_key("1", clock.t)                   # continue to the daily routine
+    s.on_key("0", clock.t)
     s.on_key(" ", clock.t)                   # past "today we'll do ..."
     assert s.stage == "intro"
     v = s.view()
@@ -335,7 +331,7 @@ def test_repeat_says_the_screen_again(log):
     assert after == before + 1
     s.on_key(" ", clock.t)
     s.on_key("r", clock.t)
-    assert s.speaker.spoken[-1].text.startswith("Point at what you'd like to do")
+    assert s.speaker.spoken[-1].text.startswith("Press a number to choose")
 
 
 # --- ratings -------------------------------------------------------------------------------
@@ -403,89 +399,3 @@ def test_report_tool_writes_tables_and_charts(data_dir, tmp_path):
     assert "Ratings" in md and "| eleanor | exertion |" in md
     pytest.importorskip("matplotlib")
     assert (out / "ratings.png").is_file() and (out / "progress_grip_release.png").is_file()
-
-
-# --- choosing from the menus by hand -----------------------------------------------------------
-
-POINT = dict(**FIST, finger_flex={"index": (0, 0, 0)})
-
-
-def pointing(t, item_rect):
-    """One index finger raised, its tip in the middle of item_rect (image fractions)."""
-    f = feat(t, **POINT)
-    x0, y0, x1, y1 = item_rect
-    tip = np.array([(x0 + x1) / 2 * IMAGE_SIZE[0], (y0 + y1) / 2 * IMAGE_SIZE[1]])
-    f.image_points = f.image_points + (tip - f.image_points[8])
-    return f
-
-
-def fingers(t, n):
-    """n fingers raised: one hand for 1-5, the second hand adds the rest."""
-    names = ("index", "middle", "ring", "pinky")
-
-    def one(k):
-        return feat(t, **dict(FIST, thumb_out=1.0 if k == 5 else 0.0,
-                              finger_flex={name: (0, 0, 0) for name in names[:min(k, 4)]}))
-    f = one(min(n, 5))
-    if n > 5:
-        f.other = one(n - 5)
-    return f
-
-
-def hold(s, clock, make, seconds):
-    for _ in range(int(seconds * 30)):
-        t = clock.tick()
-        s.update(make(t), t)
-
-
-def test_menu_by_pointing_needs_the_hand_down_first(log):
-    from rehab.Think import menu_layout
-    s, clock = menu_session(log)
-    rects = menu_layout(len(s.menu_items))
-    hold(s, clock, lambda t: pointing(t, rects[1]), 3.0)
-    assert s.stage == "menu"                          # the hand was up when the menu opened
-    hold(s, clock, lambda t: feat(t, **FIST), 0.5)
-    hold(s, clock, lambda t: pointing(t, rects[1]), 0.8)
-    assert s.stage == "menu"
-    v = s.view()
-    assert v["menu"][1]["progress"] > 0.3 and v["menu_hand"]["pointer"] is not None
-    hold(s, clock, lambda t: pointing(t, rects[1]), 1.0)
-    assert s.stage == "hand_menu"                     # item 2: hand exercises
-    # still pointing at the same place: nothing is chosen in the new menu
-    hold(s, clock, lambda t: pointing(t, menu_layout(len(s.menu_items))[1]), 3.0)
-    assert s.stage == "hand_menu"
-    hold(s, clock, lambda t: feat(t, **FIST), 0.5)
-    rects = menu_layout(len(s.menu_items))
-    hold(s, clock, lambda t: pointing(t, rects[2]), 2.0)
-    assert s.stage == "intro" and s.plan == [config.HAND_MENU[2]]
-
-
-def test_menu_by_numbers_of_fingers_with_both_hands(log):
-    s, clock = menu_session(log)
-    hold(s, clock, lambda t: feat(t, **FIST), 0.5)
-    hold(s, clock, lambda t: fingers(t, 2), 2.0)      # 2: hand exercises
-    assert s.stage == "hand_menu"
-    hold(s, clock, lambda t: feat(t, **FIST), 0.5)
-    hold(s, clock, lambda t: fingers(t, 7), 2.0)      # 5 + 2: the seventh exercise
-    assert s.stage == "intro" and s.plan == [config.HAND_MENU[6]]
-
-
-def test_menu_six_fingers_open_the_profile_and_one_finger_off_the_items_is_one(log):
-    s, clock = menu_session(log)
-    hold(s, clock, lambda t: feat(t, **FIST), 0.5)
-    hold(s, clock, lambda t: fingers(t, 6), 2.0)
-    assert s.stage == "profile"
-    s.on_key("m", clock.t)
-    s.on_key("4", clock.t)                            # memory exercises
-    hold(s, clock, lambda t: feat(t, **FIST), 0.5)
-    hold(s, clock, lambda t: pointing(t, (0.0, 0.9, 0.05, 0.95)), 2.0)   # not on an item
-    assert s.stage == "intro" and s.plan == ["memory_pairs"]
-
-
-def test_menu_numbers_beyond_the_menu_do_nothing(log):
-    s, clock = menu_session(log)
-    s.on_key("4", clock.t)                            # memory exercises: 2 items
-    hold(s, clock, lambda t: feat(t, **FIST), 0.5)
-    hold(s, clock, lambda t: fingers(t, 5), 3.0)
-    assert s.stage == "memory_menu"
-    assert s.debug_state()["menu"]["fingers"] == 5
