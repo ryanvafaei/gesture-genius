@@ -254,6 +254,9 @@ class Exercise:
     # One short sentence each, said one at a time before the first set.
     instructions = ()
     need_palm_facing = False
+    # the hand lies flat with its back to the camera: the knuckle triangle
+    # may vouch for the hand when MediaPipe's label is unsure (features)
+    palm_down = False
     need_both_hands = False     # the other hand has to be in view too
     any_hand = False            # either hand will do (e.g. pointing)
     need_hand = True            # False: works without a hand in view (keys)
@@ -334,7 +337,7 @@ class Exercise:
     def quality_problem(self, f):
         """Tracking problem as a short key (see Think.QUALITY_TEXT), or None."""
         problem = f.quality_problem(self.need_palm_facing, need_both=self.need_both_hands,
-                                    any_hand=self.any_hand)
+                                    any_hand=self.any_hand, palm_down=self.palm_down)
         if problem == "no_hand" and not self.need_hand:
             return None             # e.g. the memory game also works with keys
         return problem

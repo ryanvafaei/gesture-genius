@@ -121,6 +121,7 @@ python main.py --verbose                    # log everything (and the video) for
 python main.py --verbose --no-video         # the same without the camera video
 python -m tools.report                      # tables and charts from the saved data
 python -m tools.verbose_summary --latest    # what the newest verbose log says
+python -m tools.replay --latest             # finger tapping in that log, re-run through the current detector
 python -m pytest tests                      # tests (synthetic hands, no camera needed)
 ```
 
@@ -230,11 +231,18 @@ for the sequences and the memory game) and a 5 s rest between exercises.
 
 Detection details: the thumb-opposition calibration measures a touch on **each** fingertip (the
 ring and little fingers are further from the thumb and tracked less well), and when the prompted
-finger and a neighbour are both at the thumb, the prompted finger counts. Finger tapping scales
-each finger's lift threshold (`finger_scale`: ring 0.55, little 0.6, middle 0.85 of the index),
-lets the flat position follow a hand that settles on the table, and prefers the prompted finger
-when a neighbour rises with it; neighbours may move a little without lowering the isolation
-score. Finger counting for the ratings looks at how far each fingertip reaches beyond its middle
+finger and a neighbour are both at the thumb, the prompted finger counts. Finger tapping is the
+one exercise where the camera sees the back of the hand, where MediaPipe's Left/Right label is
+unreliable: the turn of the knuckle triangle vouches for the hand, frames whose label flickers
+are skipped quietly, and a hand turned palm up (or a ghost detection) gets "Please rest your
+hand flat on the table". A lift is the fingertip's rise above its own knuckle in the picture,
+compared with the other three fingers (a jump of the whole hand cancels out), against each
+finger's threshold (`finger_scale`: ring and little 0.7, middle 0.85 of the index). The resting
+position is taken from the live hand at the start of each set, after a pause or lost hand and
+after a jump of the hand, then follows a hand that settles on the table; a lift ends at the
+latest after 5 s or when another finger clearly takes over, so it never gets stuck. The
+prompted finger wins when a neighbour rises with it; neighbours may move a little without
+lowering the isolation score. Finger counting for the ratings looks at how far each fingertip reaches beyond its middle
 joint, which stays reliable when the fingers point at the camera.
 
 The two sequence exercises also train memory: thumb opposition moves up a level after two
@@ -480,8 +488,11 @@ hand was held still in calibration (jitter per measure and per landmark, in mm);
 finger the prompts, found, wrong fingers, how strong the prompted finger's signal was against its
 threshold and the neighbours', near misses, and a suggested setting where the numbers point to one
 (e.g. `finger_scale` for a finger whose lifts stay close to the threshold); and how steady the
-finger counts were during the ratings. The video shows the person: record only with consent and
-delete the logs when they are no longer needed.
+finger counts were during the ratings. `python -m tools.replay <folder>` re-runs the finger
+tapping frames of a log through the current detector and prints its detections next to what the
+app said and detected at the time, to check a change on a real session before trying it live.
+The video shows the person: record only with consent and delete the logs when they are no longer
+needed.
 
 **Deleting the profile** (profile screen, `d` then `y`) removes `profile.json`, `garden.json`,
 `reps.csv`, `history.csv`, `sessions.csv` and the two benchmark logs together. By default they are moved to
@@ -549,6 +560,7 @@ tools/validate.py          program rep count vs. a count by hand, on recorded vi
 tools/report.py            tables, charts and report.md from all saved data (including guests)
 tools/report_job.py        the toolbar's "Make report": runs tools.report in the background
 tools/verbose_summary.py   tracking, noise and detection numbers from a --verbose log
+tools/replay.py            re-runs the finger tapping of a --verbose log through the current detector
 rehab/guests.py            a unique id and folder for every guest
 rehab/verbose.py           the --verbose log: frames, events and the camera video
 tools/body_check.py        arm angle jitter vs. tolerance, and agreement with a goniometer

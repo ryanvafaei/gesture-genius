@@ -87,6 +87,7 @@ QUALITY_TEXT = {
     "wrong_hand": "Please use your {hand} hand.",
     "too_far": "Please move your hand a little closer.",
     "palm_away": "Please turn your palm towards the camera.",
+    "not_flat": "Please rest your {hand} hand flat on the table.",
     "no_other_hand": "Please show both hands to the camera.",
     # arm exercises: the camera's fault, never hers (plan 10.5)
     "no_body": "I can't see you. Please sit where the camera can see you.",
@@ -432,6 +433,14 @@ class SessionManager:
         return bool(self.name) and is_arm(self.name) and self.stage in BODY_STAGES
 
     @property
+    def palm_down(self):
+        """True while an exercise with the hand flat, back up, is watched: main then trusts
+        the knuckle triangle over the Left/Right label when picking the hand."""
+        cls = EXERCISES.get(self.name) if self.name else None
+        return (bool(cls) and getattr(cls, "palm_down", False)
+                and self.stage in ("calibrating", "exercise"))
+
+    @property
     def side(self):
         """The trained side as a word ("left")."""
         return self.therapist.get("affected_side") or \
@@ -762,8 +771,6 @@ class SessionManager:
             problem = self.calibration.quality_problem(f)
             self.speaker.say_all(self.calibration.update(f, now, quality_ok=problem is None,
                                                          speaking=self.speaker.busy))
-            side = getattr(self.calibration, "side", None) or self.coach.hand
-            self._quality = QUALITY_TEXT[problem].format(hand=side) if problem else None
             self._calibration_quality(problem, now)
             if self.calibration.done:
                 self._calibration_done(now)
@@ -1058,14 +1065,20 @@ class SessionManager:
         self._enter("intro", now)
 
     def _calibration_quality(self, problem, now):
-        """Measuring pauses while the hand is not seen well; say why, calmly."""
+        """
+        Measuring pauses while the hand is not seen well; say why, calmly.
+        Like during the exercise, a short drop-out (e.g. one frame with the
+        wrong Left/Right label) shows nothing: only after QUALITY_GRACE_S.
+        """
         if problem != self._cal_problem:
             self._cal_problem, self._cal_problem_since = problem, now
         if problem is None or now - self._cal_problem_since < config.QUALITY_GRACE_S:
+            self._quality = None
             return
+        side = getattr(self.calibration, "side", None) or self.coach.hand
+        self._quality = QUALITY_TEXT[problem].format(hand=side)
         if now - self._cal_last_say.get(problem, -1e9) >= config.QUALITY_MESSAGE_REPEAT_S:
             self._cal_last_say[problem] = now
-            side = getattr(self.calibration, "side", None) or self.coach.hand
             self.speaker.say(Say(QUALITY_TEXT[problem].format(hand=side), "quality",
                                  valid=lambda: self._cal_problem == problem))
 

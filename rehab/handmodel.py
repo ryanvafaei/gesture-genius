@@ -7,6 +7,9 @@ exercise cards (rehab/demo.py).
 Left hand, palm facing the camera, in the mirrored image frame
 (x right, y down, z away from the camera). Fingers flex towards the
 camera (the palm side); negative flexion lifts them backwards.
+back_to_camera turns it 180 degrees about the vertical axis: the same hand
+seen from its back (finger tapping), and negative flexion lifts the
+fingers towards the camera.
 """
 
 import numpy as np
@@ -44,13 +47,14 @@ def _chain(start, direction, lengths, flex, bend_axis):
 
 
 def hand(flex=None, spread=8.0, thumb_out=1.0, thumb_touch=None, finger_flex=None,
-         handedness="Left", noise=0.0, rng=None):
+         handedness="Left", noise=0.0, rng=None, back_to_camera=False):
     """
     flex         (mcp, pip, dip) degrees for all four fingers
     finger_flex  {finger: (mcp, pip, dip)} overrides per finger
     spread       degrees between neighbouring fingers
     thumb_out    1 = thumb stretched out, 0 = bent across the palm
     thumb_touch  finger name: put the thumb tip on that fingertip
+    back_to_camera  the back of the hand faces the camera (x -> -x, z -> -z)
     """
     flex = flex if flex is not None else (0.0, 0.0, 0.0)
     finger_flex = finger_flex or {}
@@ -81,6 +85,8 @@ def hand(flex=None, spread=8.0, thumb_out=1.0, thumb_touch=None, finger_flex=Non
         w[4] = tip
         w[3] = w[2] + 0.55 * (tip - w[2]) + np.array([0.0, 0.0, -0.01])
 
+    if back_to_camera:
+        w = w * np.array([-1.0, 1.0, -1.0])
     if noise:
         rng = rng or np.random.default_rng(0)
         w = w + rng.normal(0, noise, w.shape)

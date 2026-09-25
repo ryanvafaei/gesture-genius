@@ -30,12 +30,13 @@ KEYS = (
     + [f"spread.{g}" for g in features.GAP_NAMES]
     + [f"thumb_tip_dist.{f}" for f in features.FINGERS]
     + [f"tip_height.{f}" for f in features.FINGERS]
+    + [f"tip_rise.{f}" for f in features.FINGERS]
     + [f"mcp.{f}" for f in features.FINGERS]
     + ["thumb_flexion", "palm_facing", "palm_size_image"]
 )
 
 # Rough size of the movement each measure has to show (for the report).
-NEEDED = {"tip_height": 0.08, "thumb_tip_dist": 0.3, "openness": 0.3,
+NEEDED = {"tip_height": 0.08, "tip_rise": 0.12, "thumb_tip_dist": 0.3, "openness": 0.3,
           "spread": 10.0, "mcp": 15.0, "thumb_flexion": 30.0}
 
 

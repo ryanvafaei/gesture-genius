@@ -124,7 +124,8 @@ class CalibrationRoutine:
         step = self.step
         return f.quality_problem(step.need_palm_facing if step else False,
                                  need_both=bool(step and step.need_both_hands),
-                                 any_hand=self.exercise_cls.any_hand)
+                                 any_hand=self.exercise_cls.any_hand,
+                                 palm_down=getattr(self.exercise_cls, "palm_down", False))
 
     def resume(self, now):
         """After a pause: she may have moved, so measure this step again."""

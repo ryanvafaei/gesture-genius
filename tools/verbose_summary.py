@@ -140,8 +140,8 @@ def summarize(folder):
         cal = st.get("calibration") or {}
         if stage == "calibrating" and cal.get("stage") == "hold" and f.get("present"):
             key = (st.get("exercise"), cal.get("step"))
-            for measure in ("openness", "tip_height", "thumb_tip_dist", "thumb_tip_dist_image",
-                            "tip_reach"):
+            for measure in ("openness", "tip_height", "tip_rise", "thumb_tip_dist",
+                            "thumb_tip_dist_image", "tip_reach"):
                 for finger, v in (f.get(measure) or {}).items():
                     hold[key][f"{measure}.{finger}"].append(v)
             if hands and len(world[key]) < 600:

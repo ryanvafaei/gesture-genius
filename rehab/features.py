@@ -105,7 +105,17 @@ class HandFeatures:
     # image space
     image_points: np.ndarray = None   # (21, 2) pixel coordinates
     palm_size_image: float = 0.0      # wrist -> middle MCP / image height
+    # hand size that a hand lying flat does not shorten: the longer of palm
+    # length and palm width / PALM_WIDTH_RATIO, / image height ("too far")
+    hand_size_image: float = 0.0
     wrist_image: np.ndarray = None    # pixels
+    # which hand this is if its back faces the camera ("Left" / "Right"),
+    # from the turn of the knuckle triangle in the picture; None edge-on
+    dorsal_side: str = None
+    dorsal_match: bool = None         # dorsal_side is the affected hand (None: unknown)
+    # finger -> fingertip rise above its own knuckle, out of the back of the
+    # hand, in the picture (x, y and MediaPipe's depth) / hand size
+    tip_rise: dict = field(default_factory=dict)
 
     gesture: str = None
     gesture_score: float = 0.0
@@ -133,17 +143,29 @@ class HandFeatures:
             return 0.0
         return float(np.linalg.norm(self.image_points[9] - self.image_points[WRIST]))
 
-    def quality_problem(self, need_palm_facing=False, need_both=False, any_hand=False):
+    def quality_problem(self, need_palm_facing=False, need_both=False, any_hand=False,
+                        palm_down=False):
         """
         First quality problem as a short key, or None when all is fine.
 
         need_both  the other hand has to be in view too (two-hand exercises)
         any_hand   either hand will do (e.g. pointing in the memory game)
+        palm_down  the hand lies flat with its back to the camera (finger
+                   tapping). MediaPipe's Left/Right label is unreliable for
+                   the back of a hand, so the knuckle triangle may vouch for
+                   it instead; a hand whose triangle turns the wrong way
+                   (palm to the camera, or a ghost detection) is "not_flat".
         """
         if not self.present:
             return "no_hand"
-        if not self.correct_hand and not any_hand:
-            return "wrong_hand"
+        if not any_hand:
+            if palm_down:
+                if not self.correct_hand and not self.dorsal_match:
+                    return "wrong_hand"
+                if self.dorsal_match is False:
+                    return "not_flat"
+            elif not self.correct_hand:
+                return "wrong_hand"
         if self.too_small:
             return "too_far"
         if need_palm_facing and self.palm_facing < config.MIN_PALM_FACING:
@@ -197,14 +219,85 @@ def project_on_plane(v, n):
     return v - np.dot(v, n) * n
 
 
+# |normalised knuckle-triangle turn| below this: seen edge-on, side unknown
+DORSAL_MIN = 0.2
+# palm width / palm length of a typical hand (hand_size_image)
+PALM_WIDTH_RATIO = 0.7
+
+
+def dorsal_side(points):
+    """
+    The hand this is if its back faces the camera, or None when edge-on.
+
+    points: image landmarks in pixels, mirrored image. The turn from
+    wrist->index MCP to wrist->pinky MCP (2D cross product / both lengths)
+    is positive for a left hand seen from its back (and for a right hand
+    seen from its palm), negative the other way round.
+    """
+    a = points[5, :2] - points[WRIST, :2]
+    b = points[17, :2] - points[WRIST, :2]
+    norm = float(np.linalg.norm(a) * np.linalg.norm(b))
+    if norm < 1e-9:
+        return None
+    turn = float(a[0] * b[1] - a[1] * b[0]) / norm
+    if abs(turn) < DORSAL_MIN:
+        return None
+    return "Left" if turn > 0 else "Right"
+
+
+def hand_size_px(points):
+    """Hand size in pixels: palm length, or palm width / PALM_WIDTH_RATIO if larger."""
+    length = float(np.linalg.norm(points[9, :2] - points[WRIST, :2]))
+    width = float(np.linalg.norm(points[17, :2] - points[5, :2]))
+    return max(length, width / PALM_WIDTH_RATIO)
+
+
+def tip_rise(img3, side, size_px):
+    """
+    finger -> fingertip rise above its own knuckle, out of the back of the
+    hand, in hand sizes.
+
+    img3: image landmarks in pixels (z on the x scale). The palm plane is
+    the least-squares plane through the wrist and the four knuckles; it is
+    turned like palm_normal(img3, side), and a rise goes against it (out of
+    the back). Measured from each finger's own knuckle, moving the whole
+    hand does not count. In a grazing view the rise shows in x and y, in a
+    top-down view in MediaPipe's depth; the plane takes both.
+    """
+    pts = img3[[WRIST, 5, 9, 13, 17]]
+    _, _, vt = np.linalg.svd(pts - pts.mean(axis=0))
+    n = vt[2]
+    if np.dot(n, palm_normal(img3, side)) < 0:
+        n = -n
+    size = size_px if size_px > 1e-6 else 1.0
+    return {name: float(np.dot(img3[tip] - img3[mcp], -n) / size)
+            for name, (mcp, _, _, tip) in FINGER_LANDMARKS.items()}
+
+
 # ---------------------------------------------------------------------------
 # Extraction
 # ---------------------------------------------------------------------------
 
-def choose_hand(observations, affected_hand=config.AFFECTED_HAND):
-    """The observation of the affected hand, or the most confident other hand."""
+def choose_hand(observations, affected_hand=config.AFFECTED_HAND, palm_down=False):
+    """
+    The observation of the affected hand, or the most confident other hand.
+
+    palm_down: the hand lies with its back to the camera, where the label is
+    unreliable but the knuckle triangle is not (it turns the wrong way only
+    for ghost and duplicate detections). The best is a detection whose label
+    and triangle both say it is the affected hand; then one whose triangle
+    says so; then one with the affected label that is seen edge-on.
+    """
     if not observations:
         return None
+    if palm_down:
+        def rank(obs):
+            # normalised coordinates: the turn keeps its sign
+            side = dorsal_side(np.asarray(obs.image, dtype=float))
+            label = obs.handedness == affected_hand
+            return (label and side == affected_hand, side == affected_hand,
+                    label and side is None, label, obs.handedness_score)
+        return max(observations, key=rank)
     for obs in observations:
         if obs.handedness == affected_hand:
             return obs
@@ -325,9 +418,16 @@ def extract(obs, t, image_size, affected_hand=config.AFFECTED_HAND):
     f.image_points = img3[:, :2]
     f.wrist_image = img3[WRIST, :2].copy()
     f.palm_size_image = float(np.linalg.norm(img3[9, :2] - img3[WRIST, :2]) / height)
-    f.too_small = f.palm_size_image < config.MIN_PALM_SIZE_IMAGE
+    size_px = hand_size_px(img3)
+    f.hand_size_image = size_px / height
+    f.too_small = f.hand_size_image < config.MIN_PALM_SIZE_IMAGE
     f.palm_normal_image = palm_normal(img3, obs.handedness)
     f.palm_facing = float(-f.palm_normal_image[2])      # camera looks along +z
+    f.dorsal_side = dorsal_side(img3)
+    f.dorsal_match = None if f.dorsal_side is None else f.dorsal_side == affected_hand
+    # turned like the affected hand, not like the label: a flickering label
+    # would otherwise flip the sign of every rise
+    f.tip_rise = tip_rise(img3, affected_hand, size_px)
 
     # --- world space -----------------------------------------------------
     f.palm_size = float(np.linalg.norm(w[9] - w[WRIST]))
@@ -396,9 +496,10 @@ def extract(obs, t, image_size, affected_hand=config.AFFECTED_HAND):
 # ---------------------------------------------------------------------------
 
 _SCALARS = ("palm_facing", "palm_size", "palm_width", "thumb_flexion",
-            "thumb_to_pinky_mcp", "thumb_to_index_mcp", "palm_size_image", "aperture")
+            "thumb_to_pinky_mcp", "thumb_to_index_mcp", "palm_size_image", "hand_size_image",
+            "aperture")
 _DICTS = ("curl", "openness", "spread", "thumb_tip_dist", "thumb_tip_dist_image", "tip_height",
-          "joint_flexion", "tip_to_palm", "tip_reach")
+          "joint_flexion", "tip_to_palm", "tip_reach", "tip_rise")
 _ARRAYS = ("image_points", "wrist_image", "palm_normal", "palm_normal_image")
 
 
@@ -425,5 +526,5 @@ def smooth(features, feature_filter):
             setattr(features, name, feature_filter(name, v, t))
     if features.palm_normal is not None:
         features.palm_normal = _unit(features.palm_normal)
-    features.too_small = features.palm_size_image < config.MIN_PALM_SIZE_IMAGE
+    features.too_small = features.hand_size_image < config.MIN_PALM_SIZE_IMAGE
     return features

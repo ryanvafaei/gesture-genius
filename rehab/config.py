@@ -105,8 +105,10 @@ DESIGN_HEIGHT = 720
 
 # Quality checks
 MIN_HANDEDNESS_SCORE = 0.6
-# Hand smaller than this (wrist -> middle MCP, as a fraction of the image
-# height) is considered too far away.
+# Hand smaller than this (features.hand_size_image: wrist -> middle MCP, or
+# the palm width / 0.7 when larger, as a fraction of the image height) is
+# considered too far away. The width keeps a hand lying flat, whose palm
+# looks short from a low camera, from counting as too far.
 MIN_PALM_SIZE_IMAGE = 0.07
 # Palm-facing score is the cosine between the palm normal and the direction
 # towards the camera: 1 = palm faces the camera, -1 = back of the hand does.
@@ -274,21 +276,37 @@ EXERCISES = {
     "finger_tapping": {
         "sets": 2, "reps": 2,               # reps = rounds of the sequence
         "mode": "in_order",                 # in_order | called_out | pattern
-        # lift: tip height above the flat baseline, as a share of the index
-        # lift measured during calibration
+        # lift: fingertip rise above its knuckle in the picture (features.tip_rise,
+        # in hand sizes) compared with the other three fingers, as a share of
+        # the index lift measured during calibration
         "lift_factor": 0.5,
-        "min_lift": 0.08,                   # in palm sizes
-        "mcp_lift_deg": 15.0,
+        "min_lift": 0.12,                   # in hand sizes
         # each finger's lift compared with the index (the ring finger is tied
-        # to its neighbours and lifts least); scales both thresholds
-        "finger_scale": {"index": 1.0, "middle": 0.85, "ring": 0.55, "pinky": 0.6},
-        "min_lift_floor": 0.04,             # in palm sizes, whatever the scale
+        # to its neighbours and lifts least)
+        "finger_scale": {"index": 1.0, "middle": 0.85, "ring": 0.7, "pinky": 0.7},
+        "min_lift_floor": 0.08,             # in hand sizes, whatever the scale
         "release_ratio": 0.6,
         "min_lift_s": 0.25,
         "candidate_keep": 0.75,             # a finger about to count may dip to this (noise)
-        # the flat position follows the hand while no finger is lifted
+        # the resting position is measured from the live hand (median over
+        # this long) at the start of a set, after a pause or lost hand, after
+        # a jump of the hand and after a label change; nothing counts meanwhile
+        "baseline_seed_s": 0.4,
+        "baseline_jump": 0.8,               # wrist moved this many hand sizes in one frame
+        # then it follows the resting fingers
         "baseline_tau_s": 3.0,
+        "baseline_down_tau_s": 0.5,         # faster for a finger below its resting position
         "baseline_below": 0.6,              # only fingers scoring below this
+        # a finger scoring above baseline_below without counting as a lift
+        # for this long is taken as resting where it is
+        "baseline_stale_s": 3.0,
+        # a lift ends after this long (and that finger rests where it is), or
+        # when another finger scores this many times higher: never stuck
+        "max_lift_s": 5.0,
+        "switch_ratio": 1.5,
+        # MediaPipe's Left/Right label flickers on the back of a hand: frames
+        # with another label are skipped, unless it lasts this long
+        "label_switch_s": 1.0,
         # the prompted finger wins when it scores at least this share of the best
         "target_bias": 0.75,
         # neighbours of the lifted finger may move this much (share of their

@@ -134,23 +134,27 @@ def test_little_finger_touch_is_found():
 
 # --- lift one finger at a time --------------------------------------------------------------
 
+# the hand lies flat with its back to the camera
+BACK = dict(back_to_camera=True)
+
+
 def tapping(**params):
-    cal = calibrate(FingerTapping, [dict(), dict(finger_flex={"index": (-25, 0, 0)})])
+    cal = calibrate(FingerTapping, [BACK, dict(BACK, finger_flex={"index": (-25, 0, 0)})])
     ex = FingerTapping(calibration=cal, params=params or None)
     clock = Clock()
     ex.start_set(1, clock.t)
-    run(ex, 0.5, clock)
+    run(ex, 0.5, clock, **BACK)
     return ex, clock
 
 
 def lift(ex, clock, pose):
-    run(ex, 0.8, clock, finger_flex=pose)
-    run(ex, 0.8, clock)
+    run(ex, 0.8, clock, finger_flex=pose, **BACK)
+    run(ex, 0.8, clock, **BACK)
 
 
 def test_ring_finger_has_a_lower_threshold():
     ex, clock = tapping()
-    assert ex.thresholds["ring"][0] < ex.thresholds["middle"][0] < ex.thresholds["index"][0]
+    assert ex.thresholds["ring"] < ex.thresholds["middle"] < ex.thresholds["index"]
     for finger in ["index", "middle"]:
         lift(ex, clock, {finger: (-25, 0, 0)})
     # a small ring lift (40% of the index lift): too small for the index threshold
@@ -174,8 +178,8 @@ def test_hand_settling_on_the_table_is_not_a_lift():
     for i in range(n):
         a = -12.0 * i / (n - 1)                 # every finger drifts by 12 degrees in 30 s
         t = clock.tick()
-        ex.update(feat(t, finger_flex={k: (a, 0, 0) for k in features.FINGERS}), t)
-    run(ex, 2.0, clock, finger_flex={k: (-12, 0, 0) for k in features.FINGERS})
+        ex.update(feat(t, finger_flex={k: (a, 0, 0) for k in features.FINGERS}, **BACK), t)
+    run(ex, 2.0, clock, finger_flex={k: (-12, 0, 0) for k in features.FINGERS}, **BACK)
     r = ex._round
     assert r["correct"] == 0 and r["wrong"] == 0 and ex._lifted is None
 
@@ -185,8 +189,8 @@ def test_coupled_neighbours_do_not_spoil_isolation():
     said = []
     for _ in range(int(0.8 * FPS)):
         t = clock.tick()
-        said += ex.update(feat(t, finger_flex={"index": (-25, 0, 0), "middle": (-6, 0, 0)}), t)
-    said += run(ex, 0.8, clock)
+        said += ex.update(feat(t, finger_flex={"index": (-25, 0, 0), "middle": (-6, 0, 0)}, **BACK), t)
+    said += run(ex, 0.8, clock, **BACK)
     assert "Try to keep the other fingers resting on the table." not in [m.text for m in said]
 
 

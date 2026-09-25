@@ -231,15 +231,19 @@ def test_opposition_memory_level_hides_sequence_and_levels_up():
 
 # --- finger tapping ---------------------------------------------------------------------------
 
+# the hand lies flat with its back to the camera
+BACK = dict(back_to_camera=True)
+
+
 def tapping_cal():
-    return calibrate(FingerTapping, [dict(), dict(finger_flex={"index": (-25, 0, 0)})])
+    return calibrate(FingerTapping, [BACK, dict(BACK, finger_flex={"index": (-25, 0, 0)})])
 
 
 def lift(ex, clock, finger, others=None):
     pose = {finger: (-25, 0, 0)}
     pose.update(others or {})
-    said = run(ex, 0.8, clock, finger_flex=pose)
-    said += run(ex, 0.8, clock)
+    said = run(ex, 0.8, clock, finger_flex=pose, **BACK)
+    said += run(ex, 0.8, clock, **BACK)
     return said
 
 
@@ -247,7 +251,7 @@ def test_tapping_in_order_with_isolation():
     ex = FingerTapping(calibration=tapping_cal())
     clock = Clock()
     ex.start_set(1, clock.t)
-    said = texts(run(ex, 0.5, clock))
+    said = texts(run(ex, 0.5, clock, **BACK))
     assert "Lift your index finger." in said
     for finger in ["index", "middle", "ring", "pinky", "ring", "middle", "index"]:
         said += texts(lift(ex, clock, finger))
@@ -260,7 +264,7 @@ def test_tapping_poor_isolation_hint():
     ex = FingerTapping(calibration=tapping_cal())
     clock = Clock()
     ex.start_set(1, clock.t)
-    run(ex, 0.5, clock)
+    run(ex, 0.5, clock, **BACK)
     said = texts(lift(ex, clock, "index", others={"middle": (-12, 0, 0), "ring": (-12, 0, 0),
                                                   "pinky": (-12, 0, 0)}))
     assert "Try to keep the other fingers resting on the table." in said
@@ -271,7 +275,7 @@ def test_tapping_called_out_mode_is_random_fingers():
                        rng=np.random.default_rng(3))
     clock = Clock()
     ex.start_set(1, clock.t)
-    run(ex, 0.3, clock)
+    run(ex, 0.3, clock, **BACK)
     seq = list(ex._round["seq"])
     assert len(seq) == 4
     for finger in seq:

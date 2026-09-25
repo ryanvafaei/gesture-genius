@@ -234,7 +234,11 @@ def run_session(args, sense, display):
             if session.needs_body:
                 f = body_features(sense, frame, t, size, observations, side_smoothers, lowpass)
             else:
-                obs, other = features.pair_hands(observations, hand, sense.mirror)
+                if session.palm_down:
+                    # one hand, back up: the label is unreliable, the knuckle triangle picks it
+                    obs, other = features.choose_hand(observations, hand, palm_down=True), None
+                else:
+                    obs, other = features.pair_hands(observations, hand, sense.mirror)
                 f = features.extract(obs, t, size, hand)
                 features.smooth(f, smoother)
                 if other is not None:
