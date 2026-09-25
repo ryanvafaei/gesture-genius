@@ -40,8 +40,8 @@ class TabletopReach(ArmExercise):
     unit = "arm"
     direction = "increase"
     view = "oblique"
-    joints = ("hip", "shoulder", "elbow", "wrist")
-    both_sides = ("shoulder", "hip")
+    joints = ("shoulder", "elbow", "wrist")
+    both_sides = ("shoulder",)
     uses_ladder = False
     form_rules = ()
     compensation_rules = ()

@@ -31,7 +31,8 @@ class WristExtension(ArmExercise):
     metric_label = "Wrist lift"
     direction = "increase"
     view = "sagittal"
-    joints = ("hip", "shoulder", "elbow", "wrist")
+    joints = ("shoulder", "elbow", "wrist")
+    track_joints = ("elbow", "wrist")
     needs_hand = True
     fma_item = "19"
     fma_threshold = 15.0

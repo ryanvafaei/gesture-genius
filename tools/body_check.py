@@ -68,17 +68,18 @@ def main():
 
     sense = Sense(args.video if args.video else args.camera, mirror=not args.no_mirror)
     bank = LowPassBank(fs=sense.fps, fc=config.LOW_PASS_HZ)
+    hip_gate = body.HipGate()
     raw_rows, smooth_rows = [], []
     while True:
         frame, t = sense.read()
         if frame is None or (not args.video and t > args.seconds):
             break
         size = (frame.shape[1], frame.shape[0])
-        hands = {}
-        for obs in sense.observe(frame, t):
-            if obs.handedness:
-                hands.setdefault(obs.handedness.lower(), features.extract(obs, t, size, obs.handedness))
-        f = body.extract(sense.observe_pose(frame, t), t, size, hands)
+        # the same as the app (main.body_features): hands go to the arm they are at
+        f = body.extract(sense.observe_pose(frame, t), t, size, hip_gate=hip_gate)
+        hands = {side: features.extract(obs, t, size, side.capitalize())
+                 for side, obs in body.assign_hands(sense.observe(frame, t), f).items()}
+        body.attach_hands(f, hands)
         raw_rows.append(row_of(f))
         body.smooth(f, bank)
         smooth_rows.append(row_of(f))

@@ -163,8 +163,10 @@ def test_implausible_readings_are_rejected():
 
 def test_tracking_lost_is_the_cameras_fault():
     ex = raise_ex()
-    f = feat(0.0, hidden=("left_wrist",))
+    f = feat(0.0, hidden=("left_elbow",))
     assert ex.quality_problem(f) == "arm_hidden"
+    # a hand lifted out of the top of the picture: the shoulder angle needs no wrist
+    assert ex.quality_problem(feat(0.0, hidden=("left_wrist",))) is None
     from rehab.Think import QUALITY_TEXT
     assert "I can't see your left arm" in QUALITY_TEXT["arm_hidden"].format(hand="left")
 

@@ -40,8 +40,9 @@ class FingerToNose(ArmExercise):
     metric_label = "Finger to nose"
     direction = "decrease"
     view = "frontal"
-    joints = ("shoulder", "elbow", "wrist", "hip")
-    both_sides = ("shoulder", "hip")
+    joints = ("shoulder", "elbow", "wrist")
+    both_sides = ("shoulder",)
+    track_joints = ("shoulder", "wrist")
     head = ("nose", "left_eye", "right_eye")
     fma_item = "33"
     uses_ladder = False
@@ -75,10 +76,13 @@ class FingerToNose(ArmExercise):
     def required(self, side=None):
         return super().required(side or self.round_side)
 
+    def tracked(self, side=None):
+        return super().tracked(side or self.round_side)
+
     def quality_problem(self, f):
         if not f.present:
             return "no_body"
-        if not f.visible(self.required()):
+        if not f.visible(self.tracked()):
             return "arm_hidden"
         return None
 
@@ -90,6 +94,10 @@ class FingerToNose(ArmExercise):
     def move_prompt(self):
         return (f"Now touch your nose with your {self.round_side} index finger, five times, "
                 "going back to your lap each time.")
+
+    @property
+    def again_prompt(self):
+        return self.move_prompt
 
     # --- rounds ------------------------------------------------------------------
 
@@ -105,10 +113,13 @@ class FingerToNose(ArmExercise):
         return [Say(self.start_prompt, valid=self._while_state())]
 
     def _in_lap(self, f):
-        side = self.round_side
-        wrist_y = f.point(f"{side}_wrist")[1]
-        hip_y = f.hip_mid[1]
-        return wrist_y >= hip_y - config.REST_ZONE_TORSO * f.torso_len
+        """
+        The hand is down in her lap: the wrist well below the shoulder.
+        Measured from the shoulder, not the hips, which are often hidden
+        under the table or below the picture.
+        """
+        drop = f.arm.get(self.round_side, {}).get("wrist_drop", float("nan"))
+        return finite(drop) and drop >= config.ARM_HAND_DOWN_TORSO
 
     def update(self, f, now):
         out = []
@@ -129,7 +140,7 @@ class FingerToNose(ArmExercise):
                 r["state"] = "ready"
                 self.state = "ready"
                 self._progress(now)
-                out.append(Say(self.move_prompt, valid=self._while_state()))
+                self._prompt_due = True     # said once the coach has finished talking
             elif self._stalled(now) and self._hints.ready("stall", now):
                 self._progress(now)
                 out.append(Say(self.start_prompt, "hint", valid=self._while_state()))
@@ -137,9 +148,12 @@ class FingerToNose(ArmExercise):
             if not in_lap:
                 r["state"] = "running"
                 self.state = "moving"
+                self._prompt_due = False    # she has started
                 r["t0"] = now
                 self._start_excursion(r)
                 self._progress(now)
+        if r["state"] == "ready":
+            out += self._due_prompt()
         if r["state"] == "running":
             out += self._update_running(r, err, in_lap, now)
         self.display = self._display(err)

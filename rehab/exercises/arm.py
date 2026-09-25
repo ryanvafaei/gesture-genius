@@ -9,10 +9,28 @@ ArmExercise runs the rep state machine of the plan (section 10.1):
   ready      in the start posture; the prompt to move is said
   moving     the main angle has left the start by more than the tolerance;
              the peak is tracked
-  hold       today's target reached (minus the tolerance): hold timer
-  returning  on the way back; the rep ends when the angle is within the
-             tolerance of the start again
+  hold       today's target reached (minus the tolerance): hold timer; it
+             is left only when the angle drops two tolerances below the
+             target (hysteresis), so jitter does not restart the hold
+  returning  on the way back; the rep ends when she is back in the start
+             posture, or has come back ARM_RETURN_SHARE of the way (nobody
+             returns to the exact start angle). Going up again before the
+             target was reached is more of the same attempt, not a new rep.
              -> benchmarks.score_rep() -> RepRecord -> the Coach
+             A "rep" that moved less than ARM_MIN_REP_TOLERANCES tolerances
+             and never reached the target is jitter or a false start: it is
+             not counted.
+
+Speech keeps pace with her: the prompt to move ("Now lift ...", "And
+again.") waits until the coach has finished talking (the rep count, praise,
+a cue), and is not said at all when she has already started. "And hold." is
+an instruction, never dropped because the coach was talking.
+
+Landmarks: `joints` are what the setup check needs to see before a set
+(the whole arm, not at the edge), `track_joints` what must stay in view
+during it (e.g. not the wrist of an arm lifted above the head, which may
+leave the picture). The hips are never required: seated at a table they are
+hidden or below the picture (body.py measures against the vertical then).
 
 Tracking lost is a pause, handled by the Coach with a message that blames
 the system ("I can't see your arm"), never her.
@@ -60,7 +78,8 @@ class ArmExercise(Exercise):
     unit = "deg"                       # "arm": arm lengths (reaching)
     direction = "increase"
     view = "sagittal"                  # camera view for the setup check
-    joints = ("hip", "shoulder", "elbow", "wrist")     # landmarks needed, per side
+    joints = ("shoulder", "elbow", "wrist")     # landmarks the setup check needs, per side
+    track_joints = None                # landmarks needed in every frame (None: joints)
     both_sides = ()                    # landmarks needed on both sides (e.g. "shoulder")
     head = ()                          # e.g. ("nose", "left_eye", "right_eye")
     needs_hand = False                 # the hand of that side must be tracked too
@@ -106,6 +125,8 @@ class ArmExercise(Exercise):
         self.ladder = self.build_ladder() if mode == "training" and self.uses_ladder else None
         self.target_deg = self.ladder.target(self.level) if self.ladder else None
         self._epoch = 0
+        self._prompted = None           # the rep whose prompt to move was said
+        self._prompt_due = False        # a prompt waits for the coach to be quiet
         self._cues = 0
         self._demo_replayed = False
         self.last_result = None
@@ -123,11 +144,17 @@ class ArmExercise(Exercise):
         return 0.0 if self.mode == "assessment" else float(self.params.get("hold_s", 0))
 
     def required(self, side=None):
-        """Pose landmarks that must be visible for this exercise and side."""
+        """Pose landmarks the setup check needs to see for this exercise and side."""
         side = side or self.side
         names = [f"{side}_{j}" for j in self.joints]
         names += [f"{s}_{j}" for j in self.both_sides for s in ("left", "right")]
         return list(dict.fromkeys(names + list(self.head)))
+
+    def tracked(self, side=None):
+        """Pose landmarks that must stay in view during a set (tracking lost otherwise)."""
+        side = side or self.side
+        joints = self.track_joints if self.track_joints is not None else self.joints
+        return list(dict.fromkeys([f"{side}_{j}" for j in joints] + list(self.head)))
 
     @classmethod
     def setup_view(cls):
@@ -221,13 +248,32 @@ class ArmExercise(Exercise):
 
         arms = [a for _, a, _ in frames]
         fs = [f for f, _, _ in frames]
+        mids = [f.shoulder_mid for f in fs if f.shoulder_mid is not None]
         return {
             "primary": med([v for _, _, v in frames]),
             "elbow": med([a.get("elbow_flexion") for a in arms]),
             "upper_arm_len": med([a.get("upper_arm_len") for a in arms]),
             "ear_gap": med([a.get("ear_gap") for a in arms]),
             "trunk": med([f.trunk_angle for f in fs]),
+            "shoulder_mid": np.median(mids, axis=0) if mids else None,
+            "torso": med([f.torso_len for f in fs]),
         }
+
+    @staticmethod
+    def trunk_change(f, refs):
+        """
+        How far the trunk moved from the start of the rep (degrees): from
+        the hips when they are seen, else from the shoulders moving (the
+        hips stay on the chair, so a shift of the shoulders by d is a lean
+        of asin(d / torso length)). NaN when it cannot be told.
+        """
+        if finite(f.trunk_angle) and finite(refs.get("trunk")):
+            return abs(f.trunk_angle - refs["trunk"])
+        start, torso = refs.get("shoulder_mid"), refs.get("torso")
+        if start is None or f.shoulder_mid is None or not finite(torso) or torso <= 0:
+            return float("nan")
+        shift = float(np.linalg.norm(np.asarray(f.shoulder_mid) - start))
+        return float(np.degrees(np.arcsin(min(1.0, shift / torso))))
 
     def _broken(self, rule, f, arm, refs):
         """True while a form rule or compensation is broken in this frame."""
@@ -242,7 +288,7 @@ class ArmExercise(Exercise):
             limit = self.bench.compensation("shoulder_girdle_elevation")["threshold_ratio"]
             return (refs["ear_gap"] - arm["ear_gap"]) / max(f.shoulder_width, 1e-6) > limit
         if rule == "trunk":
-            return abs(f.trunk_angle - refs["trunk"]) > self.bench.trunk_threshold
+            return self.trunk_change(f, refs) > self.bench.trunk_threshold
         return False
 
     def cue_text(self, rule):
@@ -276,7 +322,7 @@ class ArmExercise(Exercise):
         """None, or "no_body" / "arm_hidden" / "hand_hidden" (said as the system's fault)."""
         if not f.present:
             return "no_body"
-        if not f.visible(self.required()):
+        if not f.visible(self.tracked()):
             return "arm_hidden"
         if self.needs_hand:
             hand = f.hands.get(self.side)
@@ -299,7 +345,7 @@ class ArmExercise(Exercise):
             "moving_samples": [], "t_move": None, "hints": 0, "invalid": 0, "rejects": 0,
             "visibility": [], "trunk_max": 0.0, "hike_max": 0.0, "in_plane_min": float("nan"),
             "wrist_to_ear_min": float("nan"), "in_start_frames": 0, "back_frames": 0,
-            "stalls": 0,
+            "stalls": 0, "reached": False,
         }
         self._hold_start = None
 
@@ -307,6 +353,7 @@ class ArmExercise(Exercise):
         super().start_set(set_no, now)
         self._cues = 0
         self._demo_replayed = False
+        self._prompt_due = False
         self.state = "start"
         self._reset_rep(now)
 
@@ -314,6 +361,7 @@ class ArmExercise(Exercise):
         """Tracking lost or paused: the rep in progress is dropped, she starts again from rest."""
         super().interrupt(now)
         self._epoch += 1
+        self._prompt_due = False
         self.state = "start"
         self._reset_rep(now)
 
@@ -348,7 +396,7 @@ class ArmExercise(Exercise):
             return out
         if f.visibility is not None:
             rep["visibility"].append(float(np.mean([f.visibility[body.POSE[n]]
-                                                    for n in self.required()])))
+                                                    for n in self.tracked()])))
         state = self.state
         if state == "start":
             out += self._update_start(f, arm, value, now)
@@ -367,8 +415,8 @@ class ArmExercise(Exercise):
             if rep["in_start_frames"] >= self.min_frames:
                 self.state = "ready"
                 self._progress(now)
-                prompt = self.again_prompt if self.reps_this_set else self.move_prompt
-                return [Say(prompt, valid=self._while_state())]
+                self._prompt_due = True
+                return self._due_prompt()
             return []
         rep["in_start_frames"] = 0
         rep["start_buffer"] = []
@@ -377,6 +425,27 @@ class ArmExercise(Exercise):
             rep["hints"] += 1
             return [Say(self.start_prompt, "hint", valid=self._while_state())]
         return []
+
+    def _rep_key(self):
+        return self.set_no, len(self.reps), self._epoch
+
+    def _due_prompt(self):
+        """
+        The prompt to move, once per rep, when the coach has finished
+        talking: said over the rep count or a cue it would be cut off or
+        heard late, after she has already started.
+        """
+        if not self._prompt_due or self.state != "ready":
+            return []
+        if self._prompted == self._rep_key():
+            self._prompt_due = False
+            return []
+        if self.speaking:
+            return []
+        self._prompt_due = False
+        self._prompted = self._rep_key()
+        prompt = self.again_prompt if self.reps_this_set else self.move_prompt
+        return [Say(prompt, valid=self._while_state())]
 
     def _update_ready(self, f, arm, value, now):
         rep = self._rep
@@ -391,8 +460,12 @@ class ArmExercise(Exercise):
             rep["t_move"] = now
             rep["t_start"] = now
             self.state = "moving"
+            self._prompt_due = False        # she has started: no need to ask
             self._progress(now)
             return self._update_moving(f, arm, value, now)
+        out = self._due_prompt()
+        if out:
+            return out
         if self._stalled(now) and self._hints.ready("stall", now):
             self._progress(now)
             rep["stalls"] += 1
@@ -402,7 +475,7 @@ class ArmExercise(Exercise):
                 rep["refs"] = start or {"primary": value}
                 rep["values"] = [value]
                 rep["times"] = [now]
-                return self._finish_rep(now)
+                return self._finish_rep(now, attempt=True)
             return [Say(self.move_prompt, "hint", valid=self._while_state())]
         return []
 
@@ -436,20 +509,23 @@ class ArmExercise(Exercise):
             rep["peak"], rep["peak_t"] = value, now
             self._progress(now)
             self.on_peak(f, arm)
+            if self.state == "returning" and not rep["reached"]:
+                self.state = "moving"           # going on up: the same attempt
+        target = self.target_deg
         if self.state == "moving":
             rep["moving_samples"].append((now, value))
-            target = self.target_deg
             if target is not None and self.sgn * (value - target) >= -self.tolerance:
+                rep["reached"] = True
                 if self.hold_s > 0:
                     self.state = "hold"
                     self._hold_start = now
                     rep["hold_values"] = []
-                    out.append(Say("And hold.", "count", valid=self._while_state()))
+                    out.append(Say("And hold.", valid=self._while_state()))
                 else:
                     self.state = "returning"
                     out.append(Say(self.return_prompt, valid=self._while_state()))
-            elif self.sgn * (rep["peak"] - value) > self.tolerance:
-                # on the way back without reaching the target: the attempt is over
+            elif self.sgn * (rep["peak"] - value) > 2 * self.tolerance:
+                # clearly on the way back without reaching the target: the attempt is over
                 self.state = "returning"
             elif self._stalled(now) and self._hints.ready("stall", now):
                 self._progress(now)
@@ -457,8 +533,7 @@ class ArmExercise(Exercise):
                 out.append(Say(MORE_RANGE_CUE if target is None else "A little further, if you can.",
                                "hint", valid=self._while_state()))
         elif self.state == "hold":
-            target = self.target_deg
-            if self.sgn * (value - target) < -self.tolerance:
+            if self.sgn * (value - target) < -2 * self.tolerance:
                 self.state = "moving"           # dropped out of the target: no penalty
             else:
                 rep["hold_values"].append(value)
@@ -467,14 +542,32 @@ class ArmExercise(Exercise):
                     self.state = "returning"
                     out.append(Say(self.return_prompt, valid=self._while_state()))
         if self.state == "returning":
-            back = self.sgn * (value - refs["primary"]) <= self.tolerance
-            rep["back_frames"] = rep["back_frames"] + 1 if back else 0
+            rep["back_frames"] = rep["back_frames"] + 1 if self._back(f, arm, value) else 0
             if rep["back_frames"] >= self.min_frames:
                 out += self._finish_rep(now)
             elif self._stalled(now) and self._hints.ready("stall", now):
                 self._progress(now)
                 out.append(Say(self.return_prompt, "hint", valid=self._while_state()))
         return out
+
+    def _moved(self):
+        """How far this rep got from its start (in the exercise's direction)."""
+        rep = self._rep
+        start = (rep["refs"] or {}).get("primary")
+        if not finite(rep["peak"]) or not finite(start):
+            return 0.0
+        return max(0.0, self.sgn * (rep["peak"] - start))
+
+    def _back(self, f, arm, value):
+        """
+        Back at the start: in the start posture again, or most of the way
+        back (ARM_RETURN_SHARE of the movement, at least to within the
+        tolerance). The exact start angle is rarely found again.
+        """
+        start = self._rep["refs"]["primary"]
+        left = self.sgn * (value - start)
+        return (self.in_start(f, arm, value)
+                or left <= max(self.tolerance, (1.0 - config.ARM_RETURN_SHARE) * self._moved()))
 
     def _track_rules(self, f, arm, refs, i):
         rep = self._rep
@@ -484,8 +577,9 @@ class ArmExercise(Exercise):
         for rule in self.compensation_rules:
             if self._broken(rule, f, arm, refs):
                 rep["comp"].setdefault(rule, []).append(i)
-        if finite(f.trunk_angle) and finite(refs.get("trunk")):
-            rep["trunk_max"] = max(rep["trunk_max"], abs(f.trunk_angle - refs["trunk"]))
+        trunk = self.trunk_change(f, refs)
+        if finite(trunk):
+            rep["trunk_max"] = max(rep["trunk_max"], trunk)
         if finite(arm.get("ear_gap")) and finite(refs.get("ear_gap")) and f.shoulder_width > 0:
             rep["hike_max"] = max(rep["hike_max"], (refs["ear_gap"] - arm["ear_gap"]) / f.shoulder_width)
         if finite(arm.get("upper_arm_len")) and finite(refs.get("upper_arm_len")):
@@ -519,8 +613,20 @@ class ArmExercise(Exercise):
             return float("nan")
         return float((deg - lo) / (hi - lo))
 
-    def _finish_rep(self, now):
+    def _finish_rep(self, now, attempt=False):
+        """
+        The rep is over: score it, log it, say the count and at most one
+        cue. attempt=True: no movement after the prompts, logged anyway.
+        Too small a movement that never reached the target is not a rep
+        (jitter, a false start): forgotten, and she simply goes again.
+        """
         rep = self._rep
+        if (not attempt and not rep["reached"]
+                and self._moved() < config.ARM_MIN_REP_TOLERANCES * self.tolerance):
+            self.trace("arm_false_start", moved=round(self._moved(), 2), tolerance=self.tolerance)
+            self.state = "start"
+            self._reset_rep(now)
+            return []
         result = self.score()
         values = np.asarray(rep["values"], float)
         refs = rep["refs"] or {"primary": float("nan")}
@@ -618,6 +724,8 @@ class ArmExercise(Exercise):
             milestones = [{"deg": m["deg"], "label": m.get("task", "")} for m in self.ladder.milestones]
         prompt = {"start": self.start_prompt, "ready": self.move_prompt,
                   "hold": "Hold", "returning": self.return_prompt}.get(self.state, self.move_prompt)
+        if self.state == "ready" and self._prompted != self._rep_key():
+            prompt = self.start_prompt      # the screen shows "move" once she has heard it
         return {
             "kind": "angle",
             "unit": self.unit,

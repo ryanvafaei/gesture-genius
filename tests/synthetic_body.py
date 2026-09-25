@@ -45,7 +45,9 @@ def pose(shoulder=0.0, elbow=0.0, side="left", view="sagittal", trunk=0.0, hike=
     hip_mid = np.array([w * 0.5, h * 0.85])
     up = rot(np.array([0.0, -1.0]), trunk)
     sh_mid = hip_mid + TORSO * up
-    half_sh = 100.0 if view == "frontal" else (60.0 if view == "oblique" else 10.0)
+    # shoulder width / torso length: facing 0.8, halfway 0.4 (as MediaPipe measures a
+    # real 45 degree turn), side-on 0.08
+    half_sh = 100.0 if view == "frontal" else (50.0 if view == "oblique" else 10.0)
     half_hip = half_sh          # hip under shoulder: the angles come out exact
     sign = {"left": -1.0, "right": 1.0}          # her left is on the left of the (mirrored) picture
     for s in ("left", "right"):

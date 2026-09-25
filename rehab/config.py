@@ -366,9 +366,20 @@ SETUP_CHECK_HOLD_S = 1.5
 SETUP_EDGE_MARGIN = 0.03            # fraction of the image
 # Camera view from the shoulder width / torso length ratio (proposed):
 # side-on (sagittal) below the first, facing the camera (frontal) above
-# the second, 45 degrees in between.
-VIEW_SAGITTAL_MAX = 0.35
-VIEW_FRONTAL_MIN = 0.60
+# the second, 45 degrees in between. Measured with MediaPipe on photos, a
+# torso square to the camera gives about 0.5-0.6 (the shoulder landmarks
+# sit at the joints, inside the shoulders' outline), 45 degrees about 0.4
+# and side-on 0.05-0.3; 0.60 for "frontal" told people who faced the
+# camera to face the camera.
+VIEW_SAGITTAL_MAX = 0.30
+VIEW_FRONTAL_MIN = 0.45
+# What the setup check accepts for each view: wider than the bands above,
+# so a chair turned a little, or narrow shoulders, still pass.
+VIEW_ACCEPT = {"sagittal": (0.0, 0.35), "frontal": (0.40, 10.0), "oblique": (0.20, 0.55)}
+# Left and right: shoulders at least this far apart (share of the torso
+# length) are told apart by their place in the picture; closer (side-on),
+# by which way she faces (body.canonical_sides).
+SIDES_APART_TORSO = 0.3
 
 # Calibration and weekly assessment (FMA: demonstrate, practise, the
 # unaffected side first; Lazem: about 10 s rest between reps)
@@ -379,10 +390,22 @@ ASSESSMENT_EVERY_DAYS = 7           # an arm calibration is also the weekly asse
 
 # Rep state machine
 ARM_START_HOLD_FRAMES = 5           # start posture held this many frames (debounce)
-ARM_START_ELEVATION_MAX = 20.0      # "arm at your side" (proposed)
+# "Arm at your side" (proposed). 30 rather than 20: seated in an armchair
+# the resting arm reads 10-25 degrees against a slightly reclined trunk,
+# and a start that is never recognised stops every rep. The rep is still
+# measured from where it really started.
+ARM_START_ELEVATION_MAX = 30.0
 ARM_BENT_ELBOW_MIN = 60.0           # start of elbow extension: elbow bent at least this (proposed)
 ARM_WRIST_START_MAX = 5.0           # wrist extension starts at or below neutral + this (proposed)
 ARM_HAND_DOWN_TORSO = 0.5           # hand in the lap / hanging: wrist this far below the shoulder (torso lengths, proposed)
+# A rep ends when the arm is back in its start posture, or has come back at
+# least this share of the way (people rarely return to the exact start
+# angle; waiting for that left reps unfinished).
+ARM_RETURN_SHARE = 0.75
+# Moving less than this many tolerances from the start and back is jitter
+# or a false start, not a rep: it is not counted (an attempt without
+# movement is still logged after the prompts, see ArmExercise).
+ARM_MIN_REP_TOLERANCES = 2.0
 NOSE_ROUND_TIMEOUT_S = 60           # finger to nose: a round ends after this, touches or not (proposed)
 # Hand to head: the wrist reaches the ear. benchmarks.json proposes 0.5
 # shoulder widths, but side-on the shoulders overlap, so the distance is
@@ -407,7 +430,6 @@ REACH_ELBOW_ALMOST_STRAIGHT = 20.0  # degrees of elbow flexion left at the far t
 # Finger to nose (FMA 31-33, adapted: eyes open)
 NOSE_TOUCHES = 5
 NOSE_AWAY = 2.0                     # finger this far from the nose (eye distances) = away again
-REST_ZONE_TORSO = 0.3               # wrist within this share of the torso above the hips = in the lap
 TREMOR_MAX_PEAKS = 2                # speed peaks per approach for "no tremor" (proposed)
 
 # ---------------------------------------------------------------------------
