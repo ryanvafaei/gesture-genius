@@ -16,7 +16,7 @@ Landmark numbers: 0 wrist; 1-4 thumb (CMC, MCP, IP, tip); 5-8 index;
 9-12 middle; 13-16 ring; 17-20 pinky (each MCP, PIP, DIP, tip).
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -215,6 +215,45 @@ def choose_other(observations, chosen):
     """The observation of the other hand (not `chosen`), or None."""
     others = [o for o in observations or [] if o is not chosen]
     return max(others, key=lambda o: o.handedness_score) if others else None
+
+
+# Two detections whose wrists are closer than this (in palm sizes) are the
+# same hand seen twice, not two hands.
+SAME_HAND_WRIST_DIST = 0.5
+
+
+def _palm_image(obs):
+    return float(np.linalg.norm(np.asarray(obs.image)[9, :2] - np.asarray(obs.image)[WRIST, :2]))
+
+
+def pair_hands(observations, affected_hand=config.AFFECTED_HAND, mirror=config.MIRROR):
+    """
+    (affected, other) observations; either may be None.
+
+    With one hand in view this is choose_hand. With two, the handedness
+    label is not trusted: MediaPipe often gives both hands the same label
+    (especially a closed hand) or swaps them from frame to frame, which
+    made the two-hand exercise lose the other hand and mixed the two hands'
+    filters. Both hands are in front of her, uncrossed, so their place in
+    the image says which is which: in the mirrored image her left hand is
+    on the left. The labels are corrected to match, so the palm direction
+    of each hand is computed the right way round. A hand detected twice
+    (wrists on top of each other) counts once.
+    """
+    obs = list(observations or [])
+    if len(obs) >= 2:
+        obs.sort(key=lambda o: o.handedness_score, reverse=True)
+        a, b = obs[0], obs[1]
+        gap = np.linalg.norm(np.asarray(a.image)[WRIST, :2] - np.asarray(b.image)[WRIST, :2])
+        if gap < SAME_HAND_WRIST_DIST * max(_palm_image(a), _palm_image(b)):
+            obs = [a]
+        else:
+            left, right = sorted((a, b), key=lambda o: o.image[WRIST][0], reverse=not mirror)
+            left = replace(left, handedness="Left") if left.handedness != "Left" else left
+            right = replace(right, handedness="Right") if right.handedness != "Right" else right
+            return (left, right) if affected_hand == "Left" else (right, left)
+    chosen = choose_hand(obs, affected_hand)
+    return chosen, None
 
 
 # Finger counting (answers 1-5 without a keyboard). A long finger counts as

@@ -855,6 +855,7 @@ class Display:
                           and not view.get("quality"))
             self.draw_body(frame, features, ex.get("side") or setup.get("side"))
         else:
+            self.draw_hand(frame, getattr(features, "other", None))     # the other hand, when seen
             self.draw_hand(frame, features, ex.get("finger_colors"))
             self.draw_overlay(frame, features, ex)
         text = ui.TextLayer() if ui.pillow_available() else None
