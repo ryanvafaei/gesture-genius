@@ -560,19 +560,19 @@ def test_arm_menu(log):
     x = Session(log, exercises=None, t=t)
     x.start()
     assert x.s.stage == "menu"
-    x.s.on_key("a", x.clock.t)
+    x.s.on_key("3", x.clock.t)
     assert x.s.stage == "arm_menu"
     items = x.s.view()["menu"]
-    assert items[0]["text"] == "Back"
-    head = x.s.arm_menu.index("hand_to_head")
+    assert items[0]["key"] == "1" and items[-1]["text"] == "Back"
+    head = x.s.menu_items.index("hand_to_head")
     assert items[head]["note"] == "with your therapist"
-    x.s.on_key(str(head), x.clock.t)
+    x.s.on_key(str(head + 1), x.clock.t)
     assert x.s.stage == "arm_menu"                          # not on her own
     assert "This one is for when your therapist is with you." in x.said()
     x.s.on_key("m", x.clock.t)
     assert x.s.stage == "menu"
-    x.s.on_key("a", x.clock.t)
-    x.s.on_key(str(x.s.arm_menu.index("shoulder_flexion_raise")), x.clock.t)
+    x.s.on_key("3", x.clock.t)
+    x.s.on_key(str(x.s.menu_items.index("shoulder_flexion_raise") + 1), x.clock.t)
     assert x.s.stage == "intro" and x.s.plan == ["shoulder_flexion_raise"]
 
 

@@ -57,9 +57,12 @@ class ReportJob:
         cmd = command or ([sys.executable, "-m", "tools.report",
                            "--data", str(self.data_dir), "--out", str(self.out)]
                           + (["--user", user] if user else []))
+        self.name = cmd[2] if len(cmd) > 2 else "the report"     # e.g. tools.report
         try:
+            # its own session: Ctrl+C in the terminal stops the app, not the report
             self._proc = subprocess.Popen(cmd, cwd=str(config.ROOT_DIR),
-                                          stdout=subprocess.DEVNULL, stderr=self._errors)
+                                          stdout=subprocess.DEVNULL, stderr=self._errors,
+                                          start_new_session=True)
         except OSError as e:
             self._proc = None
             self._state = ("failed", f"Report failed: {e}")
@@ -86,10 +89,19 @@ class ReportJob:
         else:
             self._errors.seek(0)
             lines = self._errors.read().decode(errors="replace").strip().splitlines()
-            print("tools.report failed:\n" + "\n".join(lines[-20:]), file=sys.stderr)
+            print(f"{self.name} failed:\n" + "\n".join(lines[-20:]), file=sys.stderr)
             self._state = ("failed", "Report failed (see the terminal)")
         self._errors.close()
         return self._state
+
+
+def verbose_summary(folder):
+    """
+    tools.verbose_summary of one verbose log (python main.py --verbose), in the
+    background: summary.md and summary.json in that folder.
+    """
+    return ReportJob(folder, folder, open_when_done=False, user=f"verbose log {Path(folder).name}",
+                     command=[sys.executable, "-m", "tools.verbose_summary", str(folder)])
 
 
 def start_background(data_dir=None, out=None, open_when_done=True, user=None):
