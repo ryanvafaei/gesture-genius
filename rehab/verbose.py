@@ -48,9 +48,11 @@ from rehab import config, features
 
 # HandFeatures fields written for every frame (image_points etc. follow from the landmarks)
 HAND_FIELDS = ("present", "handedness", "handedness_score", "correct_hand", "too_small",
-               "palm_facing", "palm_size", "palm_width", "palm_size_image", "openness", "curl",
+               "palm_facing", "palm_size", "palm_width", "palm_size_image", "hand_size_image",
+               "image_size", "openness", "curl",
                "spread", "thumb_tip_dist", "thumb_tip_dist_image", "tip_reach", "tip_height",
-               "joint_flexion", "thumb_flexion", "thumb_to_pinky_mcp", "thumb_to_index_mcp",
+               "tip_rise", "dorsal_side", "joint_flexion", "thumb_flexion",
+               "thumb_to_pinky_mcp", "thumb_to_index_mcp",
                "aperture", "tip_to_palm", "gesture", "gesture_score")
 BODY_FIELDS = ("present", "view", "view_ratio", "trunk_angle", "arm", "shoulder_width",
                "torso_len", "points", "visibility", "gesture", "gesture_score")

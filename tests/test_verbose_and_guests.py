@@ -13,6 +13,7 @@ import pytest
 from rehab import config, features, guests, storage, verbose
 from rehab.Act import SilentSpeaker
 from rehab.exercises.base import RepRecord
+from rehab.filters import FeatureFilter
 from rehab.Think import SessionManager
 from helpers import FPS, Clock, answer, returning_profile
 from synthetic_hand import IMAGE_SIZE, hand
@@ -153,11 +154,13 @@ def logged_tapping_session(folder, log):
     clock = Clock()
     frame = np.zeros((72, 128, 3), np.uint8)
     rng = np.random.default_rng(0)
+    smoother = FeatureFilter(config.ONE_EURO_MIN_CUTOFF, config.ONE_EURO_BETA,
+                             config.ONE_EURO_D_CUTOFF)
 
     def step(**pose):
         t = clock.tick()
-        obs = hand(noise=0.001, rng=rng, **pose)
-        f = features.extract(obs, t, IMAGE_SIZE)
+        obs = hand(noise=0.001, rng=rng, back_to_camera=True, **pose)
+        f = features.smooth(features.extract(obs, t, IMAGE_SIZE), smoother)      # like main.py
         s.update(f, t)
         vlog.frame(t, frame, [obs], f, s.debug_state(), loop_ms=10.0)
 
@@ -192,7 +195,7 @@ def test_verbose_log_of_a_session(tmp_path, log):
     s, vlog = logged_tapping_session(folder, log)
     assert s.stage == "summary" and s.summaries
     meta = json.loads((folder / "session.json").read_text())
-    assert meta["config"]["EXERCISES"]["finger_tapping"]["finger_scale"]["ring"] == 0.55
+    assert meta["config"]["EXERCISES"]["finger_tapping"]["finger_scale"]["ring"] == 0.7
     assert meta["totals"]["frames"] == vlog.n > 100 and "versions" in meta
     with gzip.open(folder / "frames.jsonl.gz", "rt") as fh:
         rows = [json.loads(line) for line in fh]
@@ -224,3 +227,18 @@ def test_verbose_summary(tmp_path, log):
     assert "finger_tapping/flat" in s["noise_floor"]
     md = verbose_summary.markdown(s)
     assert "## Detection" in md and "## Tracking" in md
+
+
+def test_replay_of_a_logged_session(tmp_path, log):
+    from tools import replay
+    folder = tmp_path / "verbose" / "test_s1"
+    logged_tapping_session(folder, log)
+    timeline, info = replay.replay(folder)
+    assert info["calibration"] == "this log's calibration frames"
+    assert info["image_size"] == IMAGE_SIZE
+    fingers = [finger for _, finger in info["starts"]]
+    # the last lift ends the exercise: its frame is logged as the next stage
+    assert fingers[:6] == ["index", "middle", "ring", "pinky", "ring", "middle"]
+    assert not [text for _, source, text in timeline
+                if source == "replay" and text.startswith("quality") and not text.endswith("ok")]
+    assert any(source == "log" and text.startswith("start") for _, source, text in timeline)
