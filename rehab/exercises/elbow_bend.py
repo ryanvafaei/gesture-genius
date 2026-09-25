@@ -71,7 +71,8 @@ class HandToHead(_ElbowExercise):
         "Sit side-on to the screen, with your {side} arm nearest to it.",
     )
     direction = "increase"
-    joints = ("hip", "shoulder", "elbow", "wrist", "ear")
+    joints = ("shoulder", "elbow", "wrist", "ear")
+    track_joints = ("shoulder", "elbow", "wrist")      # the ear only scores the rep
     fma_item = "07"
     secondary_metrics = ("shoulder_elevation",)
     start_prompt = "Rest your hand in your lap."

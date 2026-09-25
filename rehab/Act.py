@@ -575,7 +575,13 @@ class Display:
             cv2.circle(frame, tuple(p), 4, BLUE, -1, cv2.LINE_AA)
 
     def draw_body(self, frame, f, side=None):
-        """Trunk and arms; the trained arm thick. Hands seen are drawn as well."""
+        """
+        Trunk and arms; the trained arm thick and labelled ("LEFT ARM"), so
+        she can see which arm the coach watches. Points the camera does not
+        really see (guessed by the model: the far arm side-on, hips under
+        the table) are not drawn, so the picture never shows an arm that
+        is not being tracked. Hands seen are drawn as well.
+        """
         if f is None or not f.present or f.points is None:
             return
         pts = f.points.astype(int)
@@ -583,15 +589,27 @@ class Display:
         def p(name):
             return tuple(pts[body.POSE[name]])
 
+        def line(a, b, color, width):
+            if f.seen(a) and f.seen(b):
+                cv2.line(frame, p(a), p(b), color, width, cv2.LINE_AA)
+
         for a, b in body.TRUNK_LINES:
-            cv2.line(frame, p(a), p(b), WHITE, 3, cv2.LINE_AA)
+            line(a, b, WHITE, 3)
         for s in body.SIDES:
             active = s == side
             for a, b in body.ARM_LINES:
-                cv2.line(frame, p(f"{s}_{a}"), p(f"{s}_{b}"), CYAN if active else GREY,
-                         8 if active else 3, cv2.LINE_AA)
+                line(f"{s}_{a}", f"{s}_{b}", CYAN if active else GREY, 8 if active else 3)
             for j in ("shoulder", "elbow", "wrist"):
-                cv2.circle(frame, p(f"{s}_{j}"), 7 if active else 4, BLUE, -1, cv2.LINE_AA)
+                if f.seen(f"{s}_{j}"):
+                    cv2.circle(frame, p(f"{s}_{j}"), 7 if active else 4, BLUE, -1, cv2.LINE_AA)
+        if side in body.SIDES and f.seen(f"{side}_shoulder"):
+            x, y = p(f"{side}_shoulder")
+            label = f"{side.upper()} ARM"
+            scale = max(0.6, frame.shape[0] / 900)
+            (tw, th), _ = cv2.getTextSize(label, FONT, scale, 2)
+            org = (int(min(max(x - tw // 2, 5), frame.shape[1] - tw - 5)), int(max(y - 40, th + 5)))
+            cv2.putText(frame, label, org, FONT, scale, BLACK, 6, cv2.LINE_AA)
+            cv2.putText(frame, label, org, FONT, scale, CYAN, 2, cv2.LINE_AA)
         for hand in f.hands.values():
             self.draw_hand(frame, hand)
 

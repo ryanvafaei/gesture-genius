@@ -217,6 +217,7 @@ def run_session(args, sense, display):
                       "Right": FeatureFilter(config.ONE_EURO_MIN_CUTOFF, config.ONE_EURO_BETA,
                                              config.ONE_EURO_D_CUTOFF)}
     lowpass = LowPassBank(fs=sense.fps, fc=config.LOW_PASS_HZ)
+    hip_gate = body.HipGate()
     hand = profile.get("affected_hand", config.AFFECTED_HAND)
     t = 0.0
     loop_ms = None
@@ -232,7 +233,8 @@ def run_session(args, sense, display):
             size = (frame.shape[1], frame.shape[0])
             observations = sense.observe(frame, t)
             if session.needs_body:
-                f = body_features(sense, frame, t, size, observations, side_smoothers, lowpass)
+                f = body_features(sense, frame, t, size, observations, side_smoothers, lowpass,
+                                  hip_gate)
             else:
                 if session.palm_down:
                     # one hand, back up: the label is unreliable, the knuckle triangle picks it
@@ -278,16 +280,22 @@ def run_session(args, sense, display):
                        ratings=session.ratings, skipped=session.skipped)
 
 
-def body_features(sense, frame, t, size, observations, smoothers, lowpass):
-    """BodyFeatures of this frame: pose landmarks plus each seen hand, filtered."""
-    hands = {}
-    for obs in features.pair_hands(observations, "Left", sense.mirror):
-        if obs is not None and obs.handedness in smoothers:
-            hf = features.extract(obs, t, size, obs.handedness)
-            hands[obs.handedness.lower()] = features.smooth(hf, smoothers[obs.handedness])
+def body_features(sense, frame, t, size, observations, smoothers, lowpass, hip_gate=None):
+    """
+    BodyFeatures of this frame: pose landmarks plus each seen hand, filtered.
+    Each hand goes to the arm whose wrist it is at (body.assign_hands), not
+    to MediaPipe's handedness label, which is often wrong for a hand seen
+    from the side.
+    """
     gesture = max(((o.gesture, o.gesture_score) for o in observations if o.gesture),
                   key=lambda g: g[1], default=(None, 0.0))
-    f = body.extract(sense.observe_pose(frame, t), t, size, hands, gesture)
+    f = body.extract(sense.observe_pose(frame, t), t, size, None, gesture, hip_gate=hip_gate)
+    unique = [o for o in features.pair_hands(observations, "Left", sense.mirror) if o is not None]
+    hands = {}
+    for side, obs in body.assign_hands(unique, f).items():
+        label = side.capitalize()
+        hands[side] = features.smooth(features.extract(obs, t, size, label), smoothers[label])
+    body.attach_hands(f, hands)
     return body.smooth(f, lowpass)
 
 

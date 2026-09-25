@@ -329,6 +329,34 @@ against the chair."), and at most one technique cue per set. A rep with a compen
 counts. When the camera loses her arm it says so as its own fault: "I can't see your arm. Please
 move into the box."
 
+**Tracking in a real room** (`rehab/body.py`, checked on photos with the app's pose model):
+
+- **No hips needed.** Seated at a table the hips are hidden or below the picture; MediaPipe then
+  guesses them (visibility 0.1–0.2), and the guess tilts the shoulder angle by up to 20°. The
+  arm exercises only need the arm itself: without visible hips the shoulder angle is measured
+  against the vertical (she sits upright), and a trunk lean is seen from the shoulders moving
+  (the hips stay on the chair). An arm raise only needs the shoulder and elbow in view during
+  a set, so a hand lifted out of the top of the picture does not stop it.
+- **Guessed points don't count.** A measure is left out while one of its points is not really
+  seen (the far arm side-on, a wrist out of the picture), and those points are not drawn. The
+  arm being trained is thick and labelled "LEFT ARM" on the camera image.
+- **Which arm.** Side-on, the arm nearest the camera is worked out from which way she faces (and
+  from depth). A left/right swap by the model, or a mirrored video, is put back. Hands are
+  matched to the arm whose wrist they are at, not to MediaPipe's handedness label.
+- **Views.** A real torso facing the camera measures 0.5–0.6 shoulder width per torso length, so
+  "facing" starts at 0.45 (it was 0.60, which asked people who faced the camera to face it); the
+  setup check accepts a little more (`VIEW_ACCEPT`). A needed point off the picture gets "Please
+  move back a little" instead of "I can't see your arm".
+- **Reps.** A rep ends when the arm is back in its start posture or has come back 75% of the way
+  (`ARM_RETURN_SHARE`); before, it had to reach the exact start angle ±5°, and many reps never
+  ended. Movements under two tolerances that never reach the target are jitter, not reps
+  (`ARM_MIN_REP_TOLERANCES`). A pause on the way up is still one rep, and the hold is only left
+  two tolerances below the target.
+- **Speech in step.** The prompt to move ("Now lift ...", "And again.") waits until the rep count
+  and cue have been said, and is skipped when she has already started. "And hold." is an
+  instruction, never dropped because the coach was talking. The 6 Hz filter follows the real
+  frame rate (pose and hands together often run at 10–15 fps, not the camera's 30).
+
 **Targets (levels):** target = her baseline + level × tolerance, up to the lowest of her right
 arm, the therapist's limit and the norm (160° active shoulder flexion). The level changes once
 per session: +1 after two sessions in a row with at least 80% clean reps (and compensation not

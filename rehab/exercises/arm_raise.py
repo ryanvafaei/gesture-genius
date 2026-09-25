@@ -14,6 +14,7 @@ item 13, 105 and 108 for a shelf at head height.
 """
 
 from rehab import benchmarks
+from rehab.benchmarks import finite
 from rehab.exercises.arm import ArmExercise
 
 CONTRACTURE_NOT_TESTABLE_DEG = 30     # FMA 2026: elbow deficit of 30 degrees or more
@@ -24,6 +25,10 @@ class _StraightArmRaise(ArmExercise):
     metric_label = "Arm height"
     direction = "increase"
     form_rules = ("elbow_straight", "in_plane")
+    # lifted high, the hand may leave the top of the picture: the shoulder
+    # angle needs only the shoulder and the elbow (the elbow rule is judged
+    # while the wrist is seen)
+    track_joints = ("shoulder", "elbow")
     start_prompt = "Let your arm hang down by your side, with your elbow straight."
     return_prompt = "And slowly down."
 
@@ -39,7 +44,8 @@ class _StraightArmRaise(ArmExercise):
         return max(self.elbow_tol, deficit)
 
     def start_ok(self, refs):
-        return refs["elbow"] <= self.elbow_allowance()
+        # an elbow not seen at the start (wrist out of the picture) gets the benefit of the doubt
+        return not finite(refs["elbow"]) or refs["elbow"] <= self.elbow_allowance()
 
     @classmethod
     def not_testable(cls, therapist):
@@ -89,8 +95,8 @@ class ShoulderAbductionRaise(_StraightArmRaise):
         "Keep your elbow straight and your shoulder relaxed.",
     )
     view = "frontal"
-    joints = ("hip", "shoulder", "elbow", "wrist", "ear")
-    both_sides = ("shoulder", "hip")
+    joints = ("shoulder", "elbow", "wrist", "ear")
+    both_sides = ("shoulder",)
     fma_item = "15"
     fma_threshold = 90.0
     form_rules = ("elbow_straight", "in_plane", "no_shoulder_hike")
