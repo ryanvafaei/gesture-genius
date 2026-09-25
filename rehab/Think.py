@@ -18,12 +18,13 @@ Coach
 SessionManager
   (first time: choose the coach's name and her favourite activities)
   greeting (remembers one fact) -> check-in (thumbs up / down) ->
-  menu (one exercise, all of today's, or finish) or, with exercises given up
+  menu (1 today's routine, 2 hand, 3 arm and 4 memory exercises, each a menu
+  of its own, 5 end for today, P her profile) or, with exercises given up
   front, today's plan -> for each exercise: activity card -> calibration
   check -> sets with rests (the target is adapted after every set) ->
   summary (one highlight, compared with her own history) -> ... ->
   garden (grows from showing up) -> goodbye.
-  Arm exercises (menu item "Arm exercises", body tracking) measure angles
+  Arm exercises (menu "Arm exercises", body tracking) measure angles
   in degrees against published benchmarks (rehab/benchmarks.py). Their
   calibration measures the right arm, then the left, and is repeated every
   week as an assessment; before the sets a setup check makes sure the camera
@@ -34,9 +35,11 @@ SessionManager
   strength exercise, praise for effort, no comparisons.
 
 Yes / no answers: thumbs up / thumbs down (either hand), with space or "y"
-and "n" as a backup. Space starts, pauses and continues; in the menu a
-number picks an exercise and up/down move the highlight; m goes back to the
-menu.
+and "n" as a backup. Space starts, pauses and continues; m goes back to the
+menu. In a menu an item is chosen with its number key (up/down and space
+move and choose), by pointing at it with the index finger and holding
+still, or by holding up its number of fingers, both hands adding up
+(MenuPicker). The hand has to come down between two choices.
 
 Profile (menu item "My profile", or p in the menu): what the coach remembers
 about her. d asks whether to delete it; only the y key confirms (a thumbs up
@@ -73,7 +76,7 @@ from datetime import datetime
 
 from rehab import benchmarks, config, memory
 from rehab import garden as garden_model
-from rehab.features import count_extended
+from rehab.features import count_extended, finger_raised
 from rehab.calibration import SetupCheck, is_stale
 from rehab.events import event
 from rehab.exercises import ARM_EXERCISES, EXERCISES, create, is_arm
@@ -98,11 +101,21 @@ QUALITY_TEXT = {
 INTRO_S_PER_SENTENCE = 2.5
 SUMMARY_S = 6.0
 
-ALL = "all"
-FINISH = "finish"
-PROFILE = "profile"
-ARM = "arm"             # opens the arm exercise menu
-BACK = "back"           # back from the arm exercise menu
+# the main menu
+ALL = "all"             # 1. continue to today's routine
+HAND = "hand"           # 2. opens the hand exercise menu
+ARM = "arm"             # 3. opens the arm exercise menu
+MEMORY = "memory"       # 4. opens the memory exercise menu
+FINISH = "finish"       # 5. end for today
+PROFILE = "profile"     # P (or six fingers)
+MAIN_MENU = (ALL, HAND, ARM, MEMORY, FINISH, PROFILE)
+BACK = "back"           # the last item of each group's menu
+# each group's menu and its stage
+GROUP_STAGES = {HAND: "hand_menu", ARM: "arm_menu", MEMORY: "memory_menu"}
+MENU_STAGES = ("menu",) + tuple(GROUP_STAGES.values())
+MENU_TEXT = {ALL: "Continue to your daily routine", HAND: "Hand exercises",
+             ARM: "Arm exercises", MEMORY: "Memory exercises", FINISH: "End for today",
+             PROFILE: "My profile", BACK: "Back"}
 
 QUESTION_STAGES = ("setup_name", "setup_activities", "check_in", "plant_choice")
 CARD_STAGES = QUESTION_STAGES + ("greeting", "today_plan", "intro", "goodbye")
@@ -238,6 +251,145 @@ class FingerCount:
         return self._value, min(1.0, max(0.0, (now - self._since) / self.hold_s)), True
 
 
+def menu_layout(n, area=config.MENU_AREA, gap=0.02):
+    """
+    Rectangles (x0, y0, x1, y1) of n menu items in camera image fractions:
+    one column of up to six, else two columns (1-5 left, 6-10 right).
+    """
+    cols = 1 if n <= 6 else 2
+    rows = max(1, -(-n // cols))
+    x0, y0, x1, y1 = area
+    w = (x1 - x0 - gap * (cols - 1)) / cols
+    h = (y1 - y0) / rows
+    rects = []
+    for i in range(n):
+        c, r = divmod(i, rows)
+        left = x0 + c * (w + gap)
+        rects.append((left, y0 + r * h + gap / 2, left + w, y0 + (r + 1) * h - gap / 2))
+    return rects
+
+
+class MenuPicker:
+    """
+    Choosing a menu item without a keyboard, with either hand:
+
+      * point at it: only the index finger raised, its tip on the item for
+        dwell_s (the item may be left for a frame or two of tracking noise);
+      * show its number: that many fingers raised, held steady for hold_s.
+        Both hands add up, so 6 to 10 are shown with two hands. The count of
+        each frame is voted over window_s, as in FingerCount.
+
+    One finger held up over an item is taken as pointing at that item; held
+    up anywhere else it is the number 1. Like FingerCount, the hand has to
+    come down (no finger raised) before anything counts: after entering a
+    menu and after each choice, so pointing at item 2 never also chooses
+    item 2 of the next menu.
+    """
+
+    def __init__(self, dwell_s=config.MENU_DWELL_S, hold_s=config.MENU_HOLD_S,
+                 window_s=config.RATING_VOTE_S):
+        self.dwell_s = dwell_s
+        self.hold_s = hold_s
+        self.window_s = window_s
+        self.reset()
+
+    def reset(self):
+        self._armed = False
+        self._dwell = None          # (item, since)
+        self._number = None         # (fingers, since)
+        self._recent = collections.deque()
+        self._now = 0.0
+        self.pointer = None         # index fingertip in image fractions, while pointing
+        self.raw = 0                # fingers raised in this frame (both hands)
+        self.voted = 0
+
+    def _vote(self, n, now):
+        self._recent.append((now, n))
+        while self._recent and now - self._recent[0][0] > self.window_s:
+            self._recent.popleft()
+        counts = collections.Counter(v for _, v in self._recent)
+        best = max(counts.values())
+        return next(v for _, v in reversed(self._recent) if counts[v] == best)
+
+    @staticmethod
+    def hands(f):
+        return [h for h in (f, getattr(f, "other", None))
+                if h is not None and getattr(h, "present", False)]
+
+    @staticmethod
+    def _pointer(hands, counts):
+        """The index fingertip (image fractions) when only an index finger is raised."""
+        if sum(counts) != 1:
+            return None
+        h = hands[counts.index(1)]
+        if not finger_raised(h, "index") or h.image_points is None:
+            return None
+        w, ht = h.image_size or (1.0, 1.0)
+        tip = h.image_points[8]
+        return float(tip[0] / w), float(tip[1] / ht)
+
+    @staticmethod
+    def item_at(rects, point):
+        if point is None:
+            return None
+        x, y = point
+        return next((i for i, (x0, y0, x1, y1) in enumerate(rects)
+                     if x0 <= x <= x1 and y0 <= y <= y1), None)
+
+    def _chosen(self, i):
+        self._armed = False
+        self._dwell = self._number = None
+        return i
+
+    def update(self, f, rects, now):
+        """One frame; rects: menu_layout() of the menu. Returns the chosen index or None."""
+        self._now = now
+        hands = self.hands(f)
+        counts = [count_extended(h) for h in hands]
+        self.raw = sum(counts)
+        n = self.voted = self._vote(self.raw, now)
+        self.pointer = self._pointer(hands, counts)
+        item = self.item_at(rects, self.pointer)
+        if n == 0 and self.pointer is None:
+            # the hand is down (or away): the next choice may start
+            self._armed = True
+            self._dwell = self._number = None
+            return None
+        if not self._armed:
+            return None
+        if item is not None:
+            self._number = None
+            if self._dwell is None or self._dwell[0] != item:
+                self._dwell = (item, now)
+                return None
+            return self._chosen(item) if now - self._dwell[1] >= self.dwell_s else None
+        if self.pointer is None and n == 1 and self._dwell is not None:
+            return None             # the fingertip was missed for a moment
+        self._dwell = None
+        if not 1 <= n <= len(rects):
+            self._number = None
+            return None
+        if self._number is None or self._number[0] != n:
+            self._number = (n, now)
+            return None
+        return self._chosen(n - 1) if now - self._number[1] >= self.hold_s else None
+
+    def state(self):
+        """For the menu screen: where she points, the item and the number being held."""
+        def progress(since, hold):
+            return min(1.0, max(0.0, (self._now - since) / hold))
+
+        return {
+            "armed": self._armed,
+            "pointer": self.pointer,
+            "fingers": self.voted,
+            "dwell": (self._dwell[0], progress(self._dwell[1], self.dwell_s))
+            if self._dwell and self._armed else None,
+            "number": (self._number[0], progress(self._number[1], self.hold_s))
+            if self._number and self._armed else None,
+        }
+
+
 def _no_trace(kind, **data):
     pass
 
@@ -360,6 +512,7 @@ class SessionManager:
         self.progress = SessionProgress(profile, log, therapist=self.therapist)
         self.yes_no = YesNo()
         self.finger_count = FingerCount()
+        self.menu_picker = MenuPicker()     # menus: pointing or fingers held up
         self.short = short                  # one short set per exercise (guests); toolbar toggle
         self.guest_id = guest_id            # a guest's unique id (rehab/guests.py), None: her own
         self.switch_user = None             # toolbar: "new_guest" / "main_profile"; main starts it
@@ -377,8 +530,12 @@ class SessionManager:
         # chosen explicitly: no day schedule and no menu
         self.fixed = bool(exercises)
         self.plan = list(exercises) if exercises else []
-        self.menu = [ALL] + list(config.SESSION_ORDER) + [ARM, FINISH, PROFILE]
-        self.arm_menu = [BACK] + [n for n in config.ARM_EXERCISES if n in ARM_EXERCISES]
+        self.menus = {
+            "menu": list(MAIN_MENU),
+            "hand_menu": [n for n in config.HAND_MENU if n in EXERCISES] + [BACK],
+            "arm_menu": [n for n in config.ARM_EXERCISES if n in ARM_EXERCISES] + [BACK],
+            "memory_menu": [n for n in config.MEMORY_MENU if n in EXERCISES] + [BACK],
+        }
         self.menu_index = 0
         self.index = -1
         self.stage = "start"
@@ -449,6 +606,11 @@ class SessionManager:
     @property
     def guest(self):
         return self.guest_id is not None
+
+    @property
+    def menu_items(self):
+        """The items of the menu on screen (the main menu when none is)."""
+        return self.menus.get(self.stage, self.menus["menu"])
 
     def _enter(self, stage, now):
         if stage != "menu":
@@ -639,11 +801,8 @@ class SessionManager:
             # memory game: keys 1-8 turn a card over
             self.speaker.say_all(self.exercise.select(int(key) - 1, now, affected=False))
             return
-        if self.stage == "menu":
+        if self.stage in MENU_STAGES:
             self._menu_key(key, now)
-            return
-        if self.stage == "arm_menu":
-            self._arm_menu_key(key, now)
             return
         if self.stage in PROFILE_STAGES:
             self._profile_key(key, now)
@@ -729,6 +888,13 @@ class SessionManager:
             # stays until she says she feels fine; never moves on by itself
             if answer == "yes":
                 self._after_safety(now)
+        elif stage in MENU_STAGES:
+            # point at an item, or show its number with the fingers
+            i = self.menu_picker.update(f, menu_layout(len(self.menu_items)), now)
+            if i is not None:
+                how = "pointing" if self.menu_picker.pointer is not None else "fingers"
+                self.trace("menu_gesture", menu=self.stage, item=self.menu_items[i], how=how)
+                self._pick(i, now)
         elif stage == "rating":
             fingers = self.finger_count.update(f, now)
             if fingers:
@@ -884,7 +1050,7 @@ class SessionManager:
         if self.fixed:
             self._today_plan(now)
         else:
-            self._say("Which exercise would you like to do?")
+            self._say("What would you like to do?")
             self._open_menu(now)
 
     def _today_plan(self, now):
@@ -905,62 +1071,59 @@ class SessionManager:
 
     # --- menu -------------------------------------------------------------------------
 
-    def _open_menu(self, now):
+    def _open_menu(self, now, stage="menu"):
+        """The main menu, or with stage one group's menu ("hand_menu" ...)."""
         self.menu_index = 0
-        self._say("Press a number to choose an exercise, "
-                  "or press the space bar to do all of today's exercises.")
-        self._instruction = "Press a number to choose"
-        self._enter("menu", now)
+        self.menu_picker.reset()
+        self._say(self._menu_prompt(stage))
+        self._instruction = "Point, or show the number with your fingers"
+        self._enter(stage, now)
+
+    @staticmethod
+    def _menu_prompt(stage):
+        if stage == "menu":
+            return "Point at what you'd like to do, or show its number with your fingers."
+        return "Point at an exercise, or show its number with your fingers."
+
+    def _menu_keys(self):
+        """The key of each item on screen: 1, 2, 3 ..., and P for her profile."""
+        return ["P" if item == PROFILE else str(i + 1) for i, item in enumerate(self.menu_items)]
 
     def _menu_key(self, key, now):
-        if key == "i":
+        items = self.menu_items
+        main = self.stage == "menu"
+        if main and key == "i":
             self.toolbar_open = not self.toolbar_open
             return
-        if self.toolbar_open and key in TOOLBAR_KEYS:
+        if main and self.toolbar_open and key in TOOLBAR_KEYS:
             self._toolbar(TOOLBAR_KEYS[key], now)
             return
-        if key == "up":
-            self.menu_index = (self.menu_index - 1) % len(self.menu)
-        elif key == "down":
-            self.menu_index = (self.menu_index + 1) % len(self.menu)
-        elif key == " ":
-            self._choose(self.menu[self.menu_index], now)
-        elif key.isdigit() and int(key) < len(self.menu) and self.menu[int(key)] not in (
-                ARM, FINISH, PROFILE):
-            # 0 = all of today's, 1-9 = the exercises
-            self.menu_index = int(key)
-            self._choose(self.menu[self.menu_index], now)
-        elif key == "e":
-            self.menu_index = self.menu.index(FINISH)
-            self._choose(FINISH, now)
-        elif key == "a":
-            self.menu_index = self.menu.index(ARM)
-            self._choose(ARM, now)
-        elif key == "p":
-            self._choose(PROFILE, now)
-
-    def _open_arm_menu(self, now):
-        self.menu_index = 0
-        self._say("Press a number to choose an arm exercise.")
-        self._instruction = "Press a number to choose"
-        self._enter("arm_menu", now)
-
-    def _arm_menu_key(self, key, now):
-        items = self.arm_menu
         if key == "up":
             self.menu_index = (self.menu_index - 1) % len(items)
         elif key == "down":
             self.menu_index = (self.menu_index + 1) % len(items)
-        elif key in (" ", "m") or (key.isdigit() and int(key) < len(items)):
-            if key.isdigit():
-                self.menu_index = int(key)
-            item = BACK if key == "m" else items[self.menu_index]
-            if item == BACK:
-                self._open_menu(now)
-            elif not self._arm_allowed(item):
-                self._say("This one is for when your therapist is with you.")
-            else:
-                self._choose(item, now)
+        elif key == " ":
+            self._pick(self.menu_index, now)
+        elif key.upper() in self._menu_keys():
+            self._pick(self._menu_keys().index(key.upper()), now)
+        elif main and key == "e":
+            self._pick(items.index(FINISH), now)
+        elif not main and key in ("m", "0"):
+            self._open_menu(now)
+
+    def _pick(self, i, now):
+        """Item i of the menu on screen was chosen (key, pointing or fingers)."""
+        item = self.menu_items[i]
+        self.menu_index = i
+        if item == BACK:
+            self._open_menu(now)
+        elif item in GROUP_STAGES:
+            self._open_menu(now, GROUP_STAGES[item])
+        elif is_arm(item) and not self._arm_allowed(item):
+            self._say("This one is for when your therapist is with you.")
+            self.menu_picker.reset()        # the hand comes down before the next choice
+        else:
+            self._choose(item, now)
 
     def _arm_allowed(self, name):
         """Exercises the therapist has not cleared for her alone start only with --exercise."""
@@ -972,9 +1135,6 @@ class SessionManager:
             return
         if item == PROFILE:
             self._open_profile(now)
-            return
-        if item == ARM:
-            self._open_arm_menu(now)
             return
         self._from_all = item == ALL
         self.plan = list(self.today) if item == ALL else [item]
@@ -1340,17 +1500,14 @@ class SessionManager:
             self._say(f"Press the space bar if you'd like to measure your {part} again.")
         elif stage == "setup_check" and self._setup:
             self._setup = SetupCheck(self._setup.required, self._setup.view, self._setup.side)
-        elif stage == "arm_menu":
-            self._say("Press a number to choose an arm exercise.")
+        elif stage in MENU_STAGES:
+            self._say(self._menu_prompt(stage))
         elif stage == "calibrating" and self.calibration:
             self.speaker.say_all(self.calibration.resume(now))
         elif stage == "exercise" and self.exercise:
             self.speaker.say_all(self.exercise.resume_messages())
         elif stage == "rest":
             self._say("Rest your hand. Thumbs up or the space bar when you're ready.")
-        elif stage == "menu":
-            self._say("Press a number to choose an exercise, "
-                      "or press the space bar to do all of today's exercises.")
         elif stage == "summary" and self._summary_event is not None:
             self.speaker.say(self._summary_event)
         elif stage == "garden" and self._garden_event is not None:
@@ -1459,6 +1616,8 @@ class SessionManager:
             d["rating"] = {"question": self.rating_questions[self._rating_index],
                            "raw": self.finger_count.raw, "voted": fingers, "hold": held,
                            "armed": armed}
+        if self.stage in MENU_STAGES:
+            d["menu"] = dict(self.menu_picker.state(), raw=self.menu_picker.raw)
         if self.stage == "calibrating" and self.calibration:
             step = self.calibration.step
             d["calibration"] = {"step": step.name if step else None,
@@ -1479,6 +1638,38 @@ class SessionManager:
         sections = len(self.plan) if self._from_all else len(self.today)
         filled = len(self.progress.completed)
         return {"sections": max(sections, filled), "filled": filled}
+
+    def _menu_view(self):
+        """The menu on screen: its items where they lie over the camera image, and the hand."""
+        items, main = self.menu_items, self.stage == "menu"
+        picker = self.menu_picker.state()
+        dwell = picker["dwell"]
+        number = picker["number"]
+        rows = []
+        for i, (item, key, rect) in enumerate(zip(items, self._menu_keys(),
+                                                  menu_layout(len(items)))):
+            note = ""
+            if item in config.DAILY_PLAN and item not in self.today:
+                note = "not today"          # every-other-day exercises not planned today
+            elif item not in MENU_TEXT and is_arm(item) and not self._arm_allowed(item):
+                note = "with your therapist"
+            progress = max(dwell[1] if dwell and dwell[0] == i else 0.0,
+                           number[1] if number and number[0] == i + 1 else 0.0)
+            rows.append({"key": key, "text": MENU_TEXT.get(item) or EXERCISES[item].title,
+                         "selected": i == self.menu_index, "note": note, "rect": rect,
+                         "progress": progress})
+        title = ("What would you like to do?" if main else
+                 MENU_TEXT[next(g for g, st in GROUP_STAGES.items() if st == self.stage)])
+        v = {"title": title, "menu": rows,
+             "menu_hand": {"pointer": picker["pointer"], "armed": picker["armed"],
+                           "fingers": number[0] if number else 0,
+                           "progress": number[1] if number else 0.0}}
+        if main:
+            v["footer"] = "Keys 1-5, P: profile   E: end   I: toolbar"
+            v["toolbar"] = self._toolbar_view()
+        else:
+            v["footer"] = f"Keys 1-{len(items)}   M or {len(items)}: back"
+        return v
 
     def view(self):
         v = {
@@ -1506,7 +1697,7 @@ class SessionManager:
             v["demo"] = {"exercise": self.name, "t": self._t - self._stage_t}
         answer, progress = self.yes_no.state(self._t)
         v["gesture"] = {"hand": self._hand_seen, "answer": answer, "progress": progress}
-        if not self.fixed and self.stage not in ("start", "menu"):
+        if not self.fixed and self.stage != "start" and self.stage not in MENU_STAGES:
             v["footer"] = "Space: pause / continue   M: menu"
         if self.stage in CARD_STAGES:
             v["screen"] = "card"
@@ -1565,31 +1756,8 @@ class SessionManager:
                 "new_bees": 1 if ev.get("bee") else 0,
                 "new_butterflies": ev.get("butterflies", 0)}}
             v["footer"] = "Thumbs up or space bar: continue"
-        elif self.stage == "menu":
-            v["title"] = "Choose an exercise"
-            v["footer"] = "Up/Down: choose  Space: start"
-            v["menu"] = [{
-                "key": ("E" if item == FINISH else "P" if item == PROFILE else
-                        "A" if item == ARM else str(i)),
-                "text": ("All of today's exercises" if item == ALL else
-                         "Finish for today" if item == FINISH else
-                         "My profile" if item == PROFILE else
-                         "Arm exercises" if item == ARM else EXERCISES[item].title),
-                "selected": i == self.menu_index,
-                # every-other-day exercises that are not planned today
-                "note": "not today" if item in config.DAILY_PLAN and item not in self.today else "",
-            } for i, item in enumerate(self.menu)]
-            v["footer"] = "Space: start   A: arm exercises   E: finish   I: toolbar"
-            v["toolbar"] = self._toolbar_view()
-        elif self.stage == "arm_menu":
-            v["title"] = "Arm exercises"
-            v["footer"] = "Up/Down: choose  Space: start  0 or M: back"
-            v["menu"] = [{
-                "key": str(i),
-                "text": "Back" if item == BACK else EXERCISES[item].title,
-                "selected": i == self.menu_index,
-                "note": "" if item == BACK or self._arm_allowed(item) else "with your therapist",
-            } for i, item in enumerate(self.arm_menu)]
+        elif self.stage in MENU_STAGES:
+            v.update(self._menu_view())
         elif self.stage == "profile":
             coach = self.profile.get("coach_name")
             v["screen"] = "profile"

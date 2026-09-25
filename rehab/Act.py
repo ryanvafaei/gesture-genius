@@ -509,6 +509,7 @@ class Display:
         self._cache = {}
         self.hotspots = []          # [((x0, y0, x1, y1), action)] of the last picture
         self._click = None
+        self._seen_open = False     # the window was seen open (closed())
 
     def canvas_size(self, frame_shape):
         """
@@ -829,36 +830,54 @@ class Display:
             size = cv2.getTextSize(label, FONT, 1.4, 3)[0]
             _text(panel, label, (center[0] - size[0] // 2, center[1] + size[1] // 2), 1.4, WHITE, 3)
 
-    def _menu(self, frame, items):
-        """The exercise list, large, over the camera image (two columns when it is long)."""
-        h, w = frame.shape[:2]
-        top, bottom = 90, h - 150
-        _band(frame, top - 10, bottom + 10, 0.7)
-        cols = 2 if len(items) > 8 else 1
-        per_col = -(-len(items) // cols)
-        row = int(min(72, (bottom - top) / max(1, per_col)))
-        # leave the right edge free for the coach's face
-        col_w = (w - 150) / cols
-        text_w = col_w - (10 if cols > 1 else 0) - 30 - int(70 * row / 55) - 15
+    def _menu(self, frame, items, rect, hand=None):
+        """
+        The menu, large, over the camera image: each item where Think looks for
+        her fingertip (rect: where the image lies). An item fills up while she
+        points at it or holds up its number; the fingertip gets a ring.
+        """
+        x0, y0, iw, ih = rect
+        boxes = [(int(x0 + a * iw), int(y0 + b * ih), int(x0 + c * iw), int(y0 + d * ih))
+                 for a, b, c, d in (item["rect"] for item in items)]
+        if not boxes:
+            return
+        _band(frame, min(b[1] for b in boxes) - 10, max(b[3] for b in boxes) + 10, 0.7)
+        row = min(b[3] - b[1] for b in boxes)
+        size = min(row / 55, 1.3)
+        key_w = int(48 * size)
         # one text size for the whole menu: the longest item decides
-        scale = min((_fit_scale(item["text"], text_w, row / 55) for item in items), default=row / 55)
-        for i, item in enumerate(items):
-            c, r = divmod(i, per_col)
-            x0 = int(30 + c * col_w)
-            x1 = int(x0 + col_w - (10 if cols > 1 else 0))
-            y = top + r * row
-            text_x = x0 + 30 + int(70 * row / 55)
+        scale = min((_fit_scale(item["text"], (b[2] - b[0]) - key_w - 45, size)
+                     for item, b in zip(items, boxes)), default=size)
+
+        def baseline(top, bottom, s):
+            """The baseline that centres text of scale s between top and bottom."""
+            return (top + bottom) // 2 + int(0.36 * s * ui.FONT_PX_PER_SCALE)
+        for item, (bx0, by0, bx1, by1) in zip(items, boxes):
+            progress = float(item.get("progress") or 0.0)
             if item["selected"]:
-                cv2.rectangle(frame, (x0, y + 4), (x1, y + row - 4), CYAN, -1)
-            color = BLACK if item["selected"] else WHITE
-            base = y + int(row * 0.7)
-            _text(frame, item["key"], (x0 + 30, base), row / 55,
-                  YELLOW if not item["selected"] else BLACK, 3)
-            _text(frame, item["text"], (text_x, base), scale, color, 2)
+                cv2.rectangle(frame, (bx0, by0), (bx1, by1), CYAN, -1)
+            else:
+                cv2.rectangle(frame, (bx0, by0), (bx1, by1), (90, 90, 90), 2, cv2.LINE_AA)
+            if progress > 0:
+                # fills from the left while she points or holds up the number
+                cv2.rectangle(frame, (bx0, by0), (bx0 + int((bx1 - bx0) * progress), by1),
+                              GREEN, -1)
+                cv2.rectangle(frame, (bx0, by0), (bx1, by1), YELLOW, 4, cv2.LINE_AA)
+            dark = item["selected"] or progress > 0
+            _text(frame, item["key"], (bx0 + 18, baseline(by0, by1, size)), size,
+                  BLACK if dark else YELLOW, 3)
+            _text(frame, item["text"], (bx0 + 25 + key_w, baseline(by0, by1, scale)), scale,
+                  BLACK if dark else WHITE, 2)
             if item.get("note"):
-                size = cv2.getTextSize(item["note"], FONT, scale * 0.7, 1)[0]
-                _text(frame, item["note"], (x1 - 30 - size[0], base), scale * 0.7,
-                      BLACK if item["selected"] else GREY, 1)
+                note = scale * 0.6
+                width = cv2.getTextSize(item["note"], FONT, note, 1)[0][0]
+                _text(frame, item["note"], (bx1 - 15 - width, by0 + int(0.3 * (by1 - by0))), note,
+                      BLACK if dark else GREY, 1)
+        hand = hand or {}
+        if hand.get("pointer") is not None:
+            px, py = hand["pointer"]
+            cv2.circle(frame, (int(x0 + px * iw), int(y0 + py * ih)), 18,
+                       POINTER if hand.get("armed") else GREY, 4, cv2.LINE_AA)
 
     # --- whole screen -------------------------------------------------------
 
@@ -964,7 +983,8 @@ class Display:
         ex = view.get("exercise_display") or {}
 
         if view.get("menu"):
-            self._menu(frame, view["menu"])
+            self._menu(frame, view["menu"], view.get("camera_rect") or (0, 0, w, h),
+                       view.get("menu_hand"))
 
         # title and counters
         _wrapped(panel, view.get("title", ""), 20, 45, PANEL_W - 40, 1.0, WHITE, 2)
@@ -1019,6 +1039,14 @@ class Display:
         elif stage == "rest":
             self._ring(panel, view.get("progress", 0.0), (PANEL_W // 2, top + 130),
                        label=str(view.get("countdown", "")))
+        elif view.get("menu"):
+            _wrapped(panel, "Point at your choice and hold still, or hold up its number of "
+                     "fingers. Both hands count.", 20, top + 20, PANEL_W - 40, 0.7, GREY, 1)
+            fingers = (view.get("menu_hand") or {}).get("fingers")
+            if fingers:
+                # the number she is holding up fills its ring
+                self._ring(panel, view["menu_hand"].get("progress", 0.0),
+                           (PANEL_W // 2, top + 220), label=str(fingers))
         elif stage == "summary":
             y = top + 20
             for line in view.get("summary_lines", []):
@@ -1031,7 +1059,7 @@ class Display:
             cv2.circle(frame, (w - 70, 265), 48, (60, 60, 60), -1, cv2.LINE_AA)
             ui.draw_icon(frame, view["activity_icon"], (w - 70, 265), 64, WHITE)
         can = view.get("can")
-        if can and can.get("sections") and view.get("stage") != "menu":
+        if can and can.get("sections") and not view.get("menu"):
             ui.draw_can(frame, (w - 80, 375), 80, can["sections"], can.get("filled", 0))
         if stage == "exercise" and ex.get("kind") != "cards":
             self._still_demo(frame, view, ex)
@@ -1093,6 +1121,22 @@ class Display:
             self._size = (canvas.shape[1], canvas.shape[0])
             self._open()
         cv2.imshow(self.window, canvas)
+
+    def closed(self):
+        """
+        True once the window was closed with its close button (the app then
+        quits as with q). Only after it has been seen open: a backend that
+        cannot tell never closes the app by mistake.
+        """
+        if not self._opened:
+            return False
+        try:
+            visible = cv2.getWindowProperty(self.window, cv2.WND_PROP_VISIBLE)
+        except cv2.error:
+            return False
+        if visible >= 1:
+            self._seen_open = True
+        return self._seen_open and visible < 1
 
     def close(self):
         cv2.destroyAllWindows()
