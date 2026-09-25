@@ -50,7 +50,9 @@ time, and never makes a missed day feel like a failure.
 - **Six hand exercises** from stroke rehabilitation: grip and release, finger spreading, thumb
   bending, thumb-to-fingertip touches, finger tapping and a cloth squeeze. **Three more**: a
   bubble pinch (buttons, a pinch of salt), both hands together (the stronger hand leads) and a
-  memory card game played by pointing. She can do one or all of today's exercises from a menu.
+  memory card game played by pointing. She can do one or all of today's exercises from a menu,
+  and choose in it by pointing at an item or holding up its number of fingers (both hands count,
+  so 6 to 10 work too), as well as with the keyboard.
 - **Eight arm exercises** (arm raises, hand to mouth and head, elbow and wrist, reaching, finger
   to nose), measured in degrees with body tracking and judged against published benchmarks: the
   Fugl-Meyer assessment's form rules, normal and everyday ranges of motion, and the measurement
@@ -87,7 +89,9 @@ time, and never makes a missed day feel like a failure.
   without a terminal.
 - **Verbose log for tuning**: `--verbose` logs every frame (landmarks, measures, detector
   state), every event and the camera video; `tools/verbose_summary.py` turns a log into tracking
-  and detection numbers with suggested settings.
+  and detection numbers with suggested settings. A verbose run always starts as a new guest with
+  short sessions, and when the app closes (q, the window's close button, Ctrl+C or a kill) the
+  guest's report and each log's summary are made automatically.
 - **Works offline and on any OS**: macOS, Windows and Linux; no internet or account needed.
 
 ---
@@ -117,7 +121,8 @@ python main.py --no-speech                  # print what the coach says instead 
 python main.py --windowed                   # start in a window instead of full screen
 python main.py --guest --short              # a new guest (unique id, own folder), short sets
 python main.py --guest --hand Right         # a new guest who trains the right hand
-python main.py --verbose                    # log everything (and the video) for tuning
+python main.py --verbose                    # log everything (and the video) for tuning: a new guest,
+                                            # short sets, report + log summary when the app closes
 python main.py --verbose --no-video         # the same without the camera video
 python -m tools.report                      # tables and charts from the saved data
 python -m tools.verbose_summary --latest    # what the newest verbose log says
@@ -142,8 +147,10 @@ The MediaPipe models the app uses are included: `models/gesture_recognizer.task`
 ## Controls
 
 **Without a keyboard:** thumbs up = yes / good / carry on, thumbs down = no / not so good. Either
-hand counts; hold the gesture for a moment. Ratings: hold up 1 to 5 fingers. Memory pairs: point
-at a card and hold still.
+hand counts; hold the gesture for a moment. Ratings: hold up 1 to 5 fingers. Menus: point at an
+item with the index finger and hold still, or hold up its number of fingers (both hands add up,
+so 6 to 10 need two hands); lower the hand between two choices. Memory pairs: point at a card
+and hold still.
 
 | Key | What it does |
 |---|---|
@@ -152,11 +159,11 @@ at a card and hold still.
 | `i` | in the menu: open / close the toolbar (or click the icon at the top right) |
 | `t` / `g` / `b` / `o` | toolbar open: short sessions on / off; **new guest** (a new session for a new guest with a unique id and folder); back to her own profile (while a guest is active); make the report and open its folder (a guest's own report while a guest is active) |
 | `y` / `n` | yes / no |
-| `1`–`9` | in the menu: pick one exercise (two columns) |
-| `0` or space | in the menu: all of today's exercises |
-| `a` | in the menu: arm exercises (a second menu; `0` or `m` goes back) |
-| `e` | in the menu: finish for today |
-| `p` | in the menu: my profile (what the coach remembers) |
+| `1`–`5` | main menu: 1 continue to the daily routine, 2 hand exercises, 3 arm exercises, 4 memory exercises, 5 end for today |
+| `p` | main menu: my profile (what the coach remembers) |
+| `e` | main menu: end for today |
+| `1`–`9` | hand / arm / memory menu: pick that exercise; the last number is **Back** (`m` or `0` too) |
+| space | in a menu: choose the highlighted item |
 | `s` | **Stop / "I don't feel well"**: the safety screen, from anywhere |
 | `r` | repeat what the coach said for this screen |
 | `1`–`5` | answer a rating question (space skips) |
@@ -185,8 +192,12 @@ greeting → check-in → menu or today's plan → [activity card → calibratio
    "let's start gently" and targets start two steps lower.
 3. **Check-in:** "How is your hand feeling today?" A thumbs down switches on difficult day mode.
    No answer within 25 s means a normal day.
-4. **Menu:** one exercise, all of today's exercises, "Arm exercises" (a second menu, key `a`),
-   "Finish for today", or "My profile". With `--exercise`
+4. **Menu:** 1 "Continue to your daily routine" (all of today's exercises), 2 "Hand
+   exercises", 3 "Arm exercises", 4 "Memory exercises" (each opens its own numbered menu with
+   "Back" as the last number), 5 "End for today", and "My profile" (`p`, or six fingers). Every
+   item is chosen with its key, by pointing at it and holding still, or by holding up its number
+   of fingers; the hand has to come down between two choices, so one gesture never chooses twice.
+   With `--exercise`
    there is no menu, only "Today we'll do one exercise." Today's plan (`DAILY_PLAN`) is the six
    hand exercises and memory pairs as a restful end; bubble pinch and two-hand match are in the
    menu only. Grip squeeze (strengthening) is planned only every other day.
@@ -423,7 +434,8 @@ words she hears.
 - the mirrored camera image with the hand skeleton, and a side panel with a large progress bar
   and target line, per-finger bars, the finger sequence and big high-contrast text;
 - full-screen cards for questions, activities, the summary and the garden, with the coach's face;
-- a menu with large numbered items.
+- menus with large numbered items over the camera image; the item she points at (or whose
+  number she holds up) fills up while she holds still, and the number she shows is in the panel.
 - **Stop / "I don't feel well"** (`s`, shown bottom right on every screen, never at the left
   edge): "Let's stop here. Please sit down and rest.", the stroke warning signs, **112** in large
   type ("Call 112 now, even if it passes"), and optionally a helper to call (`HELPER_NAME`,
@@ -500,7 +512,10 @@ user (`users.csv`, "Per user"); `python -m tools.report --data data/guests/<id> 
 makes one guest's report.
 
 **Verbose logs** (`python main.py --verbose`) are for tuning the calibration, the detection and
-the tracking after a session. One folder per session, `<data>/verbose/<user>_<session>/`:
+the tracking after a session. A verbose run always starts as a new guest (her own data stays
+clean) with short sessions; when the app closes, however it closes (q or Esc, the window's close
+button, Ctrl+C or a kill), the guest's report and `tools.verbose_summary` of each log are made
+before it exits. One folder per session, `<data>/verbose/<user>_<session>/`:
 
 | File | What |
 |---|---|
@@ -533,7 +548,8 @@ in `rehab/config.py` to erase them for good.
 
 - **`rehab/config.py`**: everything a therapist might want to change: the trained hand, camera,
   sets, reps, thresholds, hold times, rest times, target steps, difficult-day rules, milestones
-  and garden size; the menu (`SESSION_ORDER`) and today's plan (`DAILY_PLAN`); the short
+  and garden size; the menus (`HAND_MENU`, `ARM_EXERCISES`, `MEMORY_MENU`), how long to point
+  or hold up fingers to choose (`MENU_DWELL_S`, `MENU_HOLD_S`) and today's plan (`DAILY_PLAN`); the short
   session for guests (`SHORT_SESSION`); the rating questions; the emergency number and helper. `AUTO_PROGRESSION = False` stops the app from changing targets by itself.
   `FULLSCREEN` and `DESIGN_HEIGHT` set how the window opens; `KEEP_DELETED_PROFILE` whether a
   deleted profile is kept as a backup.

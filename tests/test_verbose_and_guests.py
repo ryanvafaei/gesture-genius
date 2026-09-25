@@ -15,7 +15,7 @@ from rehab.Act import SilentSpeaker
 from rehab.exercises.base import RepRecord
 from rehab.filters import FeatureFilter
 from rehab.Think import SessionManager
-from helpers import FPS, Clock, answer, returning_profile
+from helpers import FPS, Clock, answer, choose, returning_profile
 from synthetic_hand import IMAGE_SIZE, hand
 
 
@@ -167,7 +167,7 @@ def logged_tapping_session(folder, log):
     step()
     s.on_key(" ", clock.t)
     answer(s, clock.t)
-    s.on_key(str(config.SESSION_ORDER.index("finger_tapping") + 1), clock.t)
+    choose(s, "finger_tapping", clock.t)
     tick = 0
     for _ in range(int(120 * FPS)):
         st = s.debug_state()
@@ -242,3 +242,41 @@ def test_replay_of_a_logged_session(tmp_path, log):
     assert not [text for _, source, text in timeline
                 if source == "replay" and text.startswith("quality") and not text.endswith("ok")]
     assert any(source == "log" and text.startswith("start") for _, source, text in timeline)
+
+
+# --- --verbose: a new guest, short sets, reports when the app closes ----------------------------
+
+def test_verbose_starts_a_short_guest_session(monkeypatch):
+    import main
+    monkeypatch.setattr("sys.argv", ["main.py", "--verbose"])
+    args = main.parse_args()
+    assert args.guest and args.short
+    monkeypatch.setattr("sys.argv", ["main.py"])
+    args = main.parse_args()
+    assert not args.guest and not args.short
+
+
+def test_final_reports_when_the_app_closes(tmp_path, monkeypatch):
+    import main
+    made = []
+    monkeypatch.setattr(main, "guest_report", lambda guest_id, folder: made.append(guest_id))
+    monkeypatch.setattr(main.report_job, "start_background",
+                        lambda *a, **k: made.append(("everyone", k.get("open_when_done"))))
+    monkeypatch.setattr(main.report_job, "verbose_summary", lambda folder: made.append(folder.name))
+    log_dir = tmp_path / "guest-001_s1"
+    log_dir.mkdir()
+    args = type("Args", (), {"guest_id": "guest-001", "verbose": True,
+                             "verbose_logs": [log_dir, tmp_path / "gone"]})()
+    main.final_reports(args, reported=set())          # e.g. Ctrl+C: not reported yet
+    assert made == ["guest-001", "guest-001_s1"]
+    made.clear()
+    main.final_reports(args, reported={"guest-001"})  # already made when the session ended
+    assert made == ["guest-001_s1"]
+    made.clear()
+    args.guest_id = None                              # back on her profile (toolbar)
+    main.final_reports(args, reported={"guest-001"})
+    assert made == [("everyone", False), "guest-001_s1"]
+    made.clear()
+    args.verbose = False
+    main.final_reports(args, reported=set())          # a normal run: nothing extra
+    assert made == []

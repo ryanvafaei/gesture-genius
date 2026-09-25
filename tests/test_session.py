@@ -7,7 +7,7 @@ from rehab.Act import SilentSpeaker
 from rehab.exercises.base import RepRecord
 from rehab.exercises.grip_release import GripRelease
 from rehab.Think import SessionManager
-from helpers import Clock, answer, feat, returning_profile
+from helpers import Clock, answer, choose, feat, returning_profile
 
 OPEN, CLOSED = (25, 35, 20), (60, 80, 50)
 
@@ -270,19 +270,42 @@ def _menu_session(log, **kw):
     return s, clock
 
 
-def test_menu_number_picks_one_exercise(log):
+def test_main_menu(log):
     s, clock = _menu_session(log)
     assert s.stage == "menu"
     items = s.view()["menu"]
-    assert items[0]["text"] == "All of today's exercises" and items[0]["selected"]
-    assert [i["key"] for i in items] == [str(i) for i in range(len(config.SESSION_ORDER) + 1)] + [
-        "A", "E", "P"]
-    assert items[-3]["text"] == "Arm exercises"
-    assert items[-2]["text"] == "Finish for today" and items[-1]["text"] == "My profile"
-    number = config.SESSION_ORDER.index("thumb_flexion") + 1
+    assert [i["text"] for i in items] == [
+        "Continue to your daily routine", "Hand exercises", "Arm exercises", "Memory exercises",
+        "End for today", "My profile"]
+    assert [i["key"] for i in items] == ["1", "2", "3", "4", "5", "P"]
+    assert items[0]["selected"]
+    s.on_key("6", clock.t)                    # her profile only with P on the keyboard
+    assert s.stage == "menu"
+
+
+def test_group_menu_number_picks_one_exercise(log):
+    s, clock = _menu_session(log)
+    s.on_key("2", clock.t)
+    assert s.stage == "hand_menu"
+    v = s.view()
+    assert v["title"] == "Hand exercises"
+    assert [i["key"] for i in v["menu"]] == [str(i) for i in range(1, len(config.HAND_MENU) + 2)]
+    assert v["menu"][-1]["text"] == "Back"
+    number = config.HAND_MENU.index("thumb_flexion") + 1
     s.on_key(str(number), clock.t)
     assert s.stage == "intro" and s.plan == ["thumb_flexion"]
     assert s.view()["title"] == "Bend and stretch your thumb"
+
+
+def test_group_menu_back(log):
+    s, clock = _menu_session(log)
+    s.on_key("4", clock.t)
+    assert s.stage == "memory_menu" and s.menu_items == ["memory_pairs", "back"]
+    s.on_key("2", clock.t)                    # Back is the last number
+    assert s.stage == "menu"
+    s.on_key("2", clock.t)
+    s.on_key("m", clock.t)
+    assert s.stage == "menu"
 
 
 def test_menu_arrows_and_space(log):
@@ -291,8 +314,10 @@ def test_menu_arrows_and_space(log):
     assert s.view()["menu"][-1]["selected"]
     s.on_key("down", clock.t)
     s.on_key("down", clock.t)
+    s.on_key(" ", clock.t)                    # hand exercises
+    assert s.stage == "hand_menu"
     s.on_key(" ", clock.t)
-    assert s.plan == [config.SESSION_ORDER[0]]
+    assert s.plan == [config.HAND_MENU[0]]
 
 
 def test_menu_space_starts_todays_session(log):
@@ -308,11 +333,11 @@ def test_menu_back_and_after_summary(log, monkeypatch):
     monkeypatch.setitem(config.EXERCISES, "grip_release",
                         dict(config.EXERCISES["grip_release"], sets=1, reps=1))
     s, clock = _menu_session(log)
-    s.on_key("2", clock.t)
+    choose(s, "finger_abduction", clock.t)
     s.on_key("m", clock.t)                    # changed her mind
     assert s.stage == "menu" and s.calibration is None
 
-    s.on_key("1", clock.t)
+    choose(s, "grip_release", clock.t)
     for _ in range(int(10 * 30)):
         t = clock.tick()
         s.update(feat(t), t)
