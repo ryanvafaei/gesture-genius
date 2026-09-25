@@ -13,7 +13,7 @@ from rehab import config, features, storage
 from rehab.Act import SilentSpeaker
 from rehab.exercises.finger_tapping import FingerTapping
 from rehab.Think import QUALITY_TEXT, Coach, SessionManager
-from helpers import FPS, Clock, answer, calibrate, returning_profile
+from helpers import FPS, Clock, answer, choose, calibrate, returning_profile
 from synthetic_hand import IMAGE_SIZE, hand
 
 BACK = dict(back_to_camera=True)
@@ -244,7 +244,7 @@ def test_calibration_screen_waits_before_showing_a_problem(log):
     s.update(back(clock.t), clock.t)
     s.on_key(" ", clock.t)
     answer(s, clock.t)
-    s.on_key(str(config.SESSION_ORDER.index("finger_tapping") + 1), clock.t)
+    choose(s, "finger_tapping", clock.t)
 
     def run(seconds, make=back):
         for _ in range(int(seconds * FPS)):
