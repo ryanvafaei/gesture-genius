@@ -1,0 +1,412 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Iris Hand Coach User Test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f3f6f5; --surface:#ffffff; --ink:#13201c; --ink-2:#46534e; --muted:#7b8782;
+  --line:#dce3e0; --axis:#b9c3bf; --accent:#0e6f66; --accent-soft:#e1f0ed;
+  --good:#0a7a3c; --bad:#b4372f; --good-bg:#e6f4ea; --bad-bg:#fbeceb;
+  --c-ex:#2a78d6; --c-cal:#eb6834; --c-intro:#1baf7a; --c-setup:#eda100; --c-wrap:#e87ba4; --c-safe:#a9afac;
+  --tip-bg:#13201c; --tip-ink:#ffffff;
+  --sans:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0e1312; --surface:#161d1b; --ink:#ecf2ef; --ink-2:#b3bfba; --muted:#808c87;
+    --line:#26302d; --axis:#3a4541; --accent:#3cc9b6; --accent-soft:#16302c;
+    --good:#4cc47a; --bad:#f07a70; --good-bg:#13291c; --bad-bg:#301a18;
+    --c-ex:#3987e5; --c-cal:#d95926; --c-intro:#199e70; --c-setup:#c98500; --c-wrap:#d55181; --c-safe:#5f6663;
+    --tip-bg:#ecf2ef; --tip-ink:#13201c;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0e1312; --surface:#161d1b; --ink:#ecf2ef; --ink-2:#b3bfba; --muted:#808c87;
+  --line:#26302d; --axis:#3a4541; --accent:#3cc9b6; --accent-soft:#16302c;
+  --good:#4cc47a; --bad:#f07a70; --good-bg:#13291c; --bad-bg:#301a18;
+  --c-ex:#3987e5; --c-cal:#d95926; --c-intro:#199e70; --c-setup:#c98500; --c-wrap:#d55181; --c-safe:#5f6663;
+  --tip-bg:#ecf2ef; --tip-ink:#13201c;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14.5px;line-height:1.5;margin:0}
+.page{max-width:1180px;margin:0 auto;padding-inline:20px;padding-block:28px 48px;display:grid;gap:22px}
+header{display:grid;gap:6px;border-bottom:1px solid var(--line);padding-bottom:16px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:30px;line-height:1.15;margin:0;text-wrap:balance;letter-spacing:-.01em}
+.scope{color:var(--ink-2);max-width:95ch;margin:0}
+.scope b{color:var(--ink)}
+h2{font-size:17px;margin:0 0 8px;text-wrap:balance}
+h3{font-size:12px;font-family:var(--mono);font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.kpi{background:var(--surface);padding:12px 14px;display:grid;gap:2px;align-content:start}
+.kpi .l{font-size:12px;color:var(--ink-2)}
+.kpi .v{font-size:25px;font-weight:700;line-height:1.1}
+.kpi .v small{font-size:14px;font-weight:400;color:var(--ink-2)}
+.kpi .s{font-size:12px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;min-width:0}
+.panel.plain{background:transparent;border:0;padding:0}
+ul.list{margin:0;padding:0;list-style:none;display:grid;gap:7px}
+ul.list li{position:relative;padding-left:20px}
+ul.list li::before{content:"";position:absolute;left:3px;top:.62em;width:7px;height:7px;border-radius:2px;background:var(--muted)}
+.ok li::before{background:var(--good)}
+.no li::before{background:var(--bad)}
+.tag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:2px 9px;border-radius:99px;margin-bottom:8px}
+.tag.ok{background:var(--good-bg);color:var(--good)} .tag.no{background:var(--bad-bg);color:var(--bad)}
+.num{font-family:var(--mono);font-size:.92em}
+ol.lessons{margin:0;padding-left:20px;display:grid;gap:7px}
+.chart{display:grid;gap:6px}
+.chart .sub{font-size:12.5px;color:var(--ink-2);margin:0}
+.chart .note{font-size:12px;color:var(--muted);margin:0}
+.scroll{overflow-x:auto}
+svg{display:block;width:100%;height:auto}
+svg text{font-family:var(--sans);fill:var(--ink-2);font-size:12px}
+svg .ax{fill:var(--muted);font-size:11px;font-family:var(--mono)}
+svg .lbl{fill:var(--ink);font-size:12.5px}
+svg .val{fill:var(--ink);font-size:11.5px;font-family:var(--mono)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+.legend i.dot{border-radius:50%}
+details{font-size:12.5px;color:var(--ink-2)}
+details summary{cursor:pointer;color:var(--accent);width:max-content}
+details summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+table{border-collapse:collapse;font-size:12px;margin-top:6px;font-variant-numeric:tabular-nums}
+th,td{border-bottom:1px solid var(--line);padding:3px 10px 3px 0;text-align:left}
+th{color:var(--muted);font-weight:400}
+#tip{position:fixed;pointer-events:none;background:var(--tip-bg);color:var(--tip-ink);font-size:12.5px;line-height:1.35;padding:7px 9px;border-radius:6px;max-width:260px;z-index:10;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.hit{cursor:default}
+footer{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+@media (max-width:900px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.grid3{grid-template-columns:1fr}}
+@media (max-width:720px){.grid2{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}h1{font-size:24px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="page">
+<header>
+  <div class="eyebrow">Hand-rehab coach “Iris” · user test log analysis</div>
+  <h1>What 12 test sessions tell us about the coach</h1>
+  <p class="scope">Source: logs only (<span class="num">data/guests</span> CSVs + <span class="num">--verbose</span> event and frame logs). Scope: <b>12 guest sessions, guest-002 to guest-013, 25 Sep 2026, 09:56–12:35</b>, one session per participant. Verbose logs exist for 8 of them (004–010, 012). Excluded: the pilot guest at 01:08, the 24 Sep guest run and the “Eleanor” operator profile sessions used to start each guest.</p>
+</header>
+
+<section class="kpis" aria-label="Headline numbers">
+  <div class="kpi"><span class="l">Sessions analysed</span><span class="v">12</span><span class="s">63 min in total, median 5.5 min</span></div>
+  <div class="kpi"><span class="l">Reps logged</span><span class="v">67</span><span class="s">50 successful (75%)</span></div>
+  <div class="kpi"><span class="l">Exercise blocks finished</span><span class="v">26<small>/38</small></span><span class="s">12 skipped (32%)</span></div>
+  <div class="kpi"><span class="l">Time spent exercising</span><span class="v">21%</span><span class="s">calibration took 28%</span></div>
+  <div class="kpi"><span class="l">Time to first rep</span><span class="v">92 s</span><span class="s">median, range 60–224 s</span></div>
+  <div class="kpi"><span class="l">End ratings (n=4)</span><span class="v">3.8<small>/5</small></span><span class="s">enjoyment · ease 4.3 · effort 4.0</span></div>
+</section>
+
+<section class="panel chart" aria-labelledby="c1t">
+  <h2 id="c1t">1 · Where session time went</h2>
+  <p class="sub">Each verbose session drawn on a shared clock. Calibration and menus take more time than the exercises themselves.</p>
+  <div class="legend" id="lg1"></div>
+  <div class="scroll"><svg id="c1a" role="img" aria-label="Share of total time by activity across 8 verbose sessions"></svg></div>
+  <div class="scroll"><svg id="c1" role="img" aria-label="Timeline of each verbose session by activity"></svg></div>
+  <p class="note">▼ marks a skipped exercise. Grey = the safety screen after Stop. Session 008 and 010 calibration includes an arm exercise that was never finished.</p>
+</section>
+
+<section class="grid2">
+  <div class="panel">
+    <span class="tag ok">What worked</span>
+    <ul class="list ok">
+      <li>The hand-exercise loop (intro → calibrate → reps → summary) ran end to end in 11 of 12 sessions. No verbose log shows a crash; each one closes with quit or goodbye.</li>
+      <li><b>Thumb bend 9/9</b> and <b>memory pairs 4/4</b> reps succeeded; bubble pinch <span class="num">17/23</span>, finger spread <span class="num">11/15</span>.</li>
+      <li>Calibration passed on the first try in <b>12 of 14</b> hand calibrations. In 31 of 59 movement reps people went past their calibrated maximum.</li>
+      <li>Difficulty adapted: both “not good” check-ins (004, 013) started at target 0.56 instead of 0.70, and targets moved within 13 of 18 blocks (range 0.50–0.73).</li>
+      <li>Tracking was stable once an exercise ran: the affected hand was visible in 80–99% of exercise frames in 6 of 7 sessions, at about 28–30 fps (p95 frame loop ≤ 44 ms).</li>
+      <li>The safety path fired instantly in all 3 Stop presses (004, 006, 009) with the 112 advice; 009 resumed after 11 s.</li>
+      <li>Every exercise opened with a daily-life purpose (“holding a cup of tea”) and summaries named it (“Today you practised for reading, cooking…”).</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <span class="tag no">What did not work</span>
+    <ul class="list no">
+      <li><b>Arm exercises: 0 of 4 attempts finished.</b> Three were skipped in intro or calibration, one was locked (“for when your therapist is with you”). In 010 the coach said “Please turn your chair so your right arm is nearest the screen” 8 times in 55 s.</li>
+      <li><b>Sequence tasks rarely passed:</b> finger tapping 1 of 3 runs, thumb-to-finger 0 of 1, and 3 more runs were skipped. A run with 7 of 8 correct lifts still counted as a failed rep.</li>
+      <li>Overhead dominates: calibration (28%) and menus/greeting (28%) outweigh exercising (21%).</li>
+      <li>98 tracking alerts in 7.8 min of exercise; “wrong hand” (51) often flipped on and off within 0.1 s. Cloth-squeeze calibration gave a near-zero range (closure 0.883→0.900) and one squeeze block was skipped after the hand kept dropping out.</li>
+      <li>The default volume was too long: “Short sessions” was switched on in 7 of 8 verbose sessions. Without it, 008 got 2×8 reps and skipped set 2.</li>
+      <li>Every guest was greeted “Hello Eleanor”, and Stop notes say “She pressed Stop”.</li>
+      <li>End ratings reached 4 of 12 people; the garden reward never grew past stage 0. The gesture menu build (012) ended after 52 s with 0 reps.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="grid2">
+  <div class="panel chart" aria-labelledby="c2t">
+    <h2 id="c2t">2 · Outcome per exercise</h2>
+    <p class="sub">Blocks started across the 12 sessions, split into finished and skipped, with the rep success rate.</p>
+    <div class="legend"><span><i style="background:var(--c-ex)"></i>Finished</span><span><i style="background:var(--c-cal)"></i>Skipped</span></div>
+    <div class="scroll"><svg id="c2" role="img" aria-label="Finished and skipped blocks per exercise"></svg></div>
+    <p class="note">Arm exercises: shoulder raise (003), elbow extension (008), wrist extension (010) skipped; 006 hit the therapist-only lock.</p>
+  </div>
+  <div class="panel chart" aria-labelledby="c3t">
+    <h2 id="c3t">3 · Hints and compensation vs success</h2>
+    <p class="sub">Rep success rate by how many corrective hints the coach gave during the rep, and whether compensation was flagged.</p>
+    <div class="scroll"><svg id="c3" role="img" aria-label="Rep success rate by hint count and compensation"></svg></div>
+    <p class="note">Wrist movement made up 12 of the 15 compensation flags. Most common prompts before failed reps: “Hold it a little longer” and “Try to keep your wrist still”.</p>
+  </div>
+</section>
+
+<section class="grid2">
+  <div class="panel">
+    <h3>Strengths</h3>
+    <ul class="list ok">
+      <li>Personal calibration per exercise makes targets fit each hand, and people met or exceeded them.</li>
+      <li>Check-in feeds the plan: a “not good” answer lowers targets and marks the day as difficult.</li>
+      <li>Warm, consistent coaching voice: about 14 utterances per minute with counting, praise and form cues.</li>
+      <li>Logging is rich: per-rep range, hold stability, hints, compensation, plus frame-level landmarks and video.</li>
+      <li>Safety Stop is always reachable and responds immediately.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h3>Weaknesses</h3>
+    <ul class="list no">
+      <li>Too much time before and between reps; a first-time user waits about 1.5 min for the first rep.</li>
+      <li>Hand identity is fragile when both hands, an object (cloth) or a side view are in frame.</li>
+      <li>All-or-nothing scoring on sequence tasks hides near-misses (7/8 = fail).</li>
+      <li>Arm exercises cannot be completed in this seated, single-camera setup.</li>
+      <li>Some logs contradict themselves: 006 is tagged “TargetRaised” while both its targets went down (0.70→0.53, 0.70→0.55). The generated <span class="num">data/report</span> stops at 12:15 and misses 011–013.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="grid2">
+  <div class="panel chart" aria-labelledby="c4t">
+    <h2 id="c4t">4 · Hand tracking quality per session</h2>
+    <p class="sub">Left: share of frames where the affected (left) hand was detected, during calibration and during exercise. Right: tracking alerts per minute of exercise.</p>
+    <div class="legend"><span><i class="dot" style="background:var(--c-cal)"></i>Calibration</span><span><i class="dot" style="background:var(--c-ex)"></i>Exercise</span><span><i style="background:var(--muted)"></i>Alerts / min</span></div>
+    <div class="scroll"><svg id="c4" role="img" aria-label="Affected-hand detection rate and alerts per minute per session"></svg></div>
+    <p class="note">005 played memory pairs with the right hand (affected-hand share 0), which lowers its exercise figure. 008 and 010 calibration includes arm set-up, which films the right arm first.</p>
+  </div>
+  <div class="panel chart" aria-labelledby="c5t">
+    <h2 id="c5t">5 · Range reached on each movement rep</h2>
+    <p class="sub">Range as a share of the person’s own calibrated range (1.0 = their calibrated max). Failed reps reached as far as successful ones (median 1.04 vs 1.01).</p>
+    <div class="legend"><span><i class="dot" style="background:var(--c-ex)"></i>Successful rep</span><span><i class="dot" style="background:var(--c-cal)"></i>Failed rep</span></div>
+    <div class="scroll"><svg id="c5" role="img" aria-label="Range reached per rep by exercise and outcome"></svg></div>
+    <p class="note">59 reps from 5 movement exercises. Failure came from holding, timing or steadiness, not from reach.</p>
+  </div>
+</section>
+
+<section class="grid3">
+  <div class="panel plain">
+    <h2>What we learned</h2>
+    <ol class="lessons">
+      <li>A first session is mostly setup. The value per minute depends more on calibration and navigation than on the exercises.</li>
+      <li>Reach is not the bottleneck; holding still for the full hold time is. A rep with one coach hint succeeds 57% of the time against 90% without.</li>
+      <li>Tracking breaks at transitions: after calibration, when both hands or an object are in view, and in side-on arm poses.</li>
+      <li>How people feel matters. The two “not good” check-ins produced a Stop (004) and the only low enjoyment score (013: 1/5).</li>
+      <li>Participants experienced effort as high (mean 4.0 of 5) even in ~5-minute sessions.</li>
+      <li>In the 8 verbose sessions every exercise was picked with a number key; no pick by gesture or voice was logged.</li>
+    </ol>
+  </div>
+  <div class="panel plain">
+    <h2>Suggested improvements</h2>
+    <ul class="list">
+      <li><b>Cut setup time:</b> reuse the last calibration and offer re-measuring, shorten intros for repeat exercises, and default first-time users to short sessions.</li>
+      <li><b>Steadier hand tracking:</b> lock onto the calibrated hand, smooth handedness over ~0.5 s before raising an alert, and treat a held object as expected in the squeeze task.</li>
+      <li><b>Fairer scoring:</b> partial credit for sequence tasks and a visible hold timer; shorten the hold after a hint instead of failing the rep.</li>
+      <li><b>Arm exercises:</b> start with the affected arm, stop repeating a prompt after two tries and offer skip, or remove them from unsupervised use.</li>
+      <li><b>Guest mode:</b> greet without a name, use neutral wording in notes, and always ask the three end ratings, also after Stop or quit.</li>
+      <li><b>Better logs:</b> record who pressed each key, the reason for Stop, and regenerate the report after the last session.</li>
+    </ul>
+  </div>
+  <div class="panel plain">
+    <h2>Gaps in this evidence</h2>
+    <ul class="list">
+      <li>12 people, one session each: no data on learning, progression or the garden over time.</li>
+      <li>Verbose logs missing for 002, 003, 011 and 013; end ratings from only 4 people.</li>
+      <li>No participant profile. Affected hand is “Left” for all 13 guests (default), so we cannot tell if testers matched the target group.</li>
+      <li>No ground truth: rep success and tracking accuracy are the system’s own judgement; video was not annotated.</li>
+      <li>Mixed builds: 012 used a different (gesture) menu, so its result is not comparable.</li>
+      <li>No usability scale (SUS/UEQ) or interview notes in the data.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>Computed from session, history and rep CSVs for guest-002…013 and from events.jsonl / frames.jsonl.gz for the 8 verbose sessions. Time shares use the 8 verbose sessions (37.3 min). Success = the coach’s own per-rep verdict.</footer>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+(function(){
+const NS="http://www.w3.org/2000/svg";
+const tip=document.getElementById('tip');
+function el(tag,attrs,parent,text){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;if(parent)parent.appendChild(e);return e}
+function hover(node,html){
+  node.classList.add('hit');
+  node.addEventListener('mousemove',ev=>{tip.innerHTML=html;tip.hidden=false;const w=tip.offsetWidth,h=tip.offsetHeight;let x=ev.clientX+14,y=ev.clientY+14;if(x+w>innerWidth-8)x=ev.clientX-w-14;if(y+h>innerHeight-8)y=ev.clientY-h-14;tip.style.left=x+'px';tip.style.top=y+'px'});
+  node.addEventListener('mouseleave',()=>{tip.hidden=true});
+}
+const NAME={bubble_pinch:'Bubble pinch',finger_abduction:'Finger spread',thumb_flexion:'Thumb bend',grip_release:'Open & close hand',grip_squeeze:'Cloth squeeze',finger_tapping:'Finger tapping',memory_pairs:'Memory pairs',thumb_opposition:'Thumb-to-finger',elbow_extension:'Elbow extension',wrist_extension:'Wrist extension'};
+const CAT={setup:['Greeting & menus','--c-setup'],intro:['Instructions','--c-intro'],calib:['Calibration','--c-cal'],ex:['Exercising','--c-ex'],wrap:['Summary & closing','--c-wrap'],safety:['Safety screen','--c-safe']};
+const ORDER=['setup','intro','calib','ex','wrap','safety'];
+const fmt=s=>{s=Math.round(s);return s>=60?Math.floor(s/60)+' min '+String(s%60).padStart(2,'0')+' s':s+' s'};
+
+/* ---------- data from logs ---------- */
+const G=[{"id":"004","end":545.0,"spans":[["setup",0.0,48.4,null],["intro",48.4,57.5,"thumb_flexion"],["calib",57.5,79.7,"thumb_flexion"],["ex",79.7,98.8,"thumb_flexion"],["wrap",98.8,112.9,"thumb_flexion"],["setup",112.9,117.1,"thumb_flexion"],["intro",117.1,126.7,"finger_abduction"],["calib",126.7,153.6,"finger_abduction"],["ex",153.6,169.4,"finger_abduction"],["wrap",169.4,181.1,"finger_abduction"],["setup",181.1,192.3,"finger_abduction"],["intro",192.3,203.2,"finger_tapping"],["calib",203.2,234.3,"finger_tapping"],["ex",234.3,259.6,"finger_tapping"],["wrap",259.6,284.0,"finger_tapping"],["setup",284.0,312.2,"finger_tapping"],["intro",312.2,323.7,"grip_squeeze"],["calib",323.7,394.5,"grip_squeeze"],["ex",394.5,414.7,"grip_squeeze"],["wrap",414.7,416.8,null],["safety",416.8,435.6,null],["setup",435.6,545.0,null]],"skips":[[414.7,"grip_squeeze"]]},{"id":"005","end":151.5,"spans":[["setup",0.0,26.5,null],["intro",26.5,38.1,"memory_pairs"],["ex",38.1,60.5,"memory_pairs"],["wrap",60.5,79.5,"memory_pairs"],["setup",79.5,89.2,"memory_pairs"],["intro",89.2,99.2,"thumb_flexion"],["calib",99.2,126.0,"thumb_flexion"],["ex",126.0,146.9,"thumb_flexion"],["wrap",146.9,151.5,"thumb_flexion"]],"skips":[]},{"id":"006","end":290.2,"spans":[["setup",0.0,36.2,null],["intro",36.2,45.8,"grip_release"],["calib",45.8,75.2,"grip_release"],["ex",75.2,109.7,"grip_release"],["wrap",109.7,123.4,"grip_release"],["setup",123.4,158.0,"grip_release"],["intro",158.0,168.5,"bubble_pinch"],["calib",168.5,226.4,"bubble_pinch"],["ex",226.4,245.5,"bubble_pinch"],["wrap",245.5,257.6,"bubble_pinch"],["safety",257.6,290.2,"bubble_pinch"]],"skips":[]},{"id":"007","end":276.0,"spans":[["setup",0.0,38.6,null],["intro",38.6,47.5,"finger_abduction"],["calib",47.5,73.6,"finger_abduction"],["ex",73.6,101.5,"finger_abduction"],["wrap",101.5,120.9,"finger_abduction"],["setup",120.9,134.4,"finger_abduction"],["intro",134.4,144.1,"bubble_pinch"],["calib",144.1,173.5,"bubble_pinch"],["ex",173.5,210.4,"bubble_pinch"],["wrap",210.4,217.9,"bubble_pinch"],["setup",217.9,236.7,"bubble_pinch"],["wrap",236.7,276.0,"bubble_pinch"]],"skips":[]},{"id":"008","end":265.8,"spans":[["setup",0.0,44.0,null],["intro",44.0,53.8,"bubble_pinch"],["calib",53.8,83.3,"bubble_pinch"],["ex",83.3,150.2,"bubble_pinch"],["wrap",150.2,151.5,null],["setup",151.5,175.2,null],["intro",175.2,184.8,"elbow_extension"],["calib",184.8,247.4,"elbow_extension"],["wrap",247.4,249.0,null],["setup",249.0,263.9,null],["wrap",263.9,265.8,null]],"skips":[[150.2,"bubble_pinch"],[247.4,"elbow_extension"]]},{"id":"009","end":278.2,"spans":[["setup",0.0,33.7,null],["intro",33.7,44.0,"finger_tapping"],["calib",44.0,70.9,"finger_tapping"],["ex",70.9,92.1,"finger_tapping"],["wrap",92.1,106.8,"finger_tapping"],["setup",106.8,110.1,"finger_tapping"],["intro",110.1,116.6,"memory_pairs"],["safety",116.6,127.4,"memory_pairs"],["setup",127.4,131.6,"memory_pairs"],["intro",131.6,142.5,"memory_pairs"],["ex",142.5,163.6,"memory_pairs"],["wrap",163.6,183.5,"memory_pairs"],["setup",183.5,196.3,"memory_pairs"],["intro",196.3,206.4,"bubble_pinch"],["calib",206.4,234.0,"bubble_pinch"],["ex",234.0,274.6,"bubble_pinch"],["wrap",274.6,278.2,"bubble_pinch"]],"skips":[]},{"id":"010","end":379.6,"spans":[["setup",0.0,34.9,null],["intro",34.9,50.8,"wrist_extension"],["calib",50.8,137.9,"wrist_extension"],["wrap",137.9,139.1,null],["setup",139.1,149.2,null],["intro",149.2,158.9,"thumb_flexion"],["calib",158.9,208.7,"thumb_flexion"],["ex",208.7,242.3,"thumb_flexion"],["wrap",242.3,260.1,"thumb_flexion"],["setup",260.1,268.0,"thumb_flexion"],["intro",268.0,278.9,"grip_squeeze"],["calib",278.9,305.0,"grip_squeeze"],["ex",305.0,355.2,"grip_squeeze"],["wrap",355.2,359.6,"grip_squeeze"],["setup",359.6,379.6,"grip_squeeze"]],"skips":[[137.9,"wrist_extension"]]},{"id":"012","end":52.2,"spans":[["setup",0.0,11.3,null],["intro",11.3,16.7,"grip_release"],["wrap",16.7,18.4,null],["setup",18.4,52.2,null]],"skips":[[16.7,"grip_release"]]}];
+const META={"004":"7 reps · check-in not good · Stop","005":"4 reps","006":"6 reps · Stop","007":"6 reps · rated","008":"8 reps","009":"5 reps · Stop","010":"6 reps","012":"0 reps · gesture menu"};
+const REPS=[["bubble_pinch","002",0.9685,true,0],["bubble_pinch","002",0.9911,true,0],["bubble_pinch","002",1.0277,true,0],["finger_abduction","003",0.8856,true,1],["finger_abduction","003",1.2074,true,0],["finger_abduction","003",1.2217,false,1],["thumb_flexion","004",0.8667,true,1],["thumb_flexion","004",1.1299,true,0],["thumb_flexion","004",1.1567,true,0],["finger_abduction","004",0.9516,true,0],["finger_abduction","004",0.9477,true,0],["finger_abduction","004",1.0929,true,0],["thumb_flexion","005",0.9617,true,1],["thumb_flexion","005",0.9638,true,0],["thumb_flexion","005",0.9406,true,0],["grip_release","006",1.3552,true,1],["grip_release","006",1.4528,true,0],["grip_release","006",1.3957,true,1],["bubble_pinch","006",0.9357,true,0],["bubble_pinch","006",1.2738,true,0],["bubble_pinch","006",1.3178,false,1],["finger_abduction","007",1.1469,false,2],["finger_abduction","007",1.1521,true,0],["finger_abduction","007",1.2773,true,1],["bubble_pinch","007",1.0866,true,1],["bubble_pinch","007",1.3233,false,0],["bubble_pinch","007",1.3994,false,2],["bubble_pinch","008",1.0787,false,1],["bubble_pinch","008",1.1301,true,0],["bubble_pinch","008",1.1006,true,0],["bubble_pinch","008",1.0979,true,0],["bubble_pinch","008",1.0217,true,0],["bubble_pinch","008",0.9388,false,2],["bubble_pinch","008",0.8655,true,1],["bubble_pinch","008",1.0128,true,0],["bubble_pinch","009",0.9905,true,2],["bubble_pinch","009",0.9211,true,0],["bubble_pinch","009",0.7898,false,1],["thumb_flexion","010",1.0222,true,1],["thumb_flexion","010",1.172,true,0],["thumb_flexion","010",0.9875,true,1],["grip_squeeze","010",0.7677,true,0],["grip_squeeze","010",0.6674,true,0],["grip_squeeze","010",0.8805,false,1],["finger_abduction","011",0.8098,false,1],["finger_abduction","011",0.79,true,0],["finger_abduction","011",0.7995,true,2],["bubble_pinch","011",1.0237,true,0],["bubble_pinch","011",1.0368,true,0],["bubble_pinch","011",1.1618,true,0],["grip_squeeze","011",0.9956,false,1],["grip_squeeze","011",1.0009,true,1],["grip_squeeze","011",1.0434,true,0],["grip_release","013",0.5841,false,1],["grip_release","013",0.7056,true,3],["grip_release","013",1.1832,false,1],["finger_abduction","013",0.9514,true,1],["finger_abduction","013",0.8166,false,3],["finger_abduction","013",0.7662,true,0]];
+const OUT=[
+ {n:'Bubble pinch',done:6,skip:1,ok:17,reps:23},
+ {n:'Finger spread',done:5,skip:0,ok:11,reps:15},
+ {n:'Finger tapping',done:3,skip:3,ok:1,reps:3},
+ {n:'Memory pairs',done:4,skip:0,ok:4,reps:4},
+ {n:'Thumb bend',done:3,skip:1,ok:9,reps:9},
+ {n:'Open & close hand',done:2,skip:1,ok:4,reps:6},
+ {n:'Cloth squeeze',done:2,skip:1,ok:4,reps:6},
+ {n:'Thumb-to-finger',done:1,skip:1,ok:0,reps:1},
+ {n:'Arm exercises (3 types)',done:0,skip:3,ok:0,reps:0,extra:'+1 locked'}
+];
+const TRK=[
+ {id:'004',cal:82,ex:80,apm:11.2,q:'wrong hand 9 · no hand 5 · too far 1'},
+ {id:'005',cal:83,ex:46,apm:0,q:'none'},
+ {id:'006',cal:63,ex:99,apm:7.8,q:'wrong hand 6 · palm away 1'},
+ {id:'007',cal:87,ex:88,apm:30.6,q:'palm away 15 · wrong hand 12 · no hand 4 · other 2'},
+ {id:'008',cal:39,ex:92,apm:18.1,q:'wrong hand 7 · palm away 6 · no hand 4'},
+ {id:'009',cal:99,ex:99,apm:0,q:'none'},
+ {id:'010',cal:60,ex:98,apm:18.6,q:'wrong hand 17 · no hand 9'}
+];
+
+/* ---------- legend 1 ---------- */
+const lg1=document.getElementById('lg1');
+ORDER.forEach(k=>{const s=document.createElement('span');s.innerHTML='<i style="background:var('+CAT[k][1]+')"></i>'+CAT[k][0];lg1.appendChild(s)});
+
+/* ---------- chart 1a: aggregate share ---------- */
+(function(){
+  const tot={};ORDER.forEach(k=>tot[k]=0);
+  G.forEach(g=>g.spans.forEach(s=>tot[s[0]]+=s[2]-s[1]));
+  const T=ORDER.reduce((a,k)=>a+tot[k],0);
+  const W=1000,L=110,R=990,svg=document.getElementById('c1a');
+  svg.setAttribute('viewBox','0 0 '+W+' 58');svg.style.minWidth='620px';
+  el('text',{x:0,y:25,class:'lbl'},svg,'All 8');
+  el('text',{x:0,y:40,class:'ax'},svg,fmt(T));
+  let x=L;const span=R-L;
+  ORDER.forEach(k=>{
+    const w=span*tot[k]/T;if(w<=0)return;
+    const r=el('rect',{x:x+1,y:12,width:Math.max(w-2,1),height:26,rx:4,fill:'var('+CAT[k][1]+')'},svg);
+    const pct=Math.round(100*tot[k]/T);
+    hover(r,'<b>'+CAT[k][0]+'</b><br>'+fmt(tot[k])+' · '+pct+'% of time');
+    if(w>44){el('text',{x:x+w/2,y:30,'text-anchor':'middle',class:'val',style:'fill:#fff;font-weight:500;pointer-events:none'},svg,pct+'%')}
+    else if(pct>=1){el('text',{x:x+w/2,y:52,'text-anchor':'middle',class:'ax'},svg,pct+'%')}
+    x+=w;
+  });
+})();
+
+/* ---------- chart 1: timelines ---------- */
+(function(){
+  const svg=document.getElementById('c1');
+  const W=1000,L=110,R=700,maxT=560,rowH=34,top=14,H=top+G.length*rowH+28;
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.style.minWidth='620px';
+  const sx=t=>L+(R-L)*t/maxT;
+  for(let m=0;m<=9;m++){const x=sx(m*60);el('line',{x1:x,x2:x,y1:top-6,y2:H-24,stroke:'var(--line)','stroke-width':1},svg);el('text',{x:x,y:H-8,'text-anchor':'middle',class:'ax'},svg,m===0?'0':m+' min')}
+  G.forEach((g,i)=>{
+    const y=top+i*rowH;
+    el('text',{x:0,y:y+15,class:'lbl'},svg,'Guest '+g.id);
+    g.spans.forEach(s=>{
+      const x1=sx(s[1]),x2=sx(s[2]);
+      const r=el('rect',{x:x1+1,y:y+4,width:Math.max(x2-x1-2,1),height:16,rx:3,fill:'var('+CAT[s[0]][1]+')'},svg);
+      hover(r,'<b>Guest '+g.id+' · '+CAT[s[0]][0]+'</b>'+(s[3]&&s[0]!=='setup'?'<br>'+(NAME[s[3]]||s[3]):'')+'<br>'+fmt(s[1])+' → '+fmt(s[2])+' ('+fmt(s[2]-s[1])+')');
+    });
+    g.skips.forEach(k=>{const x=sx(k[0]);const p=el('path',{d:'M'+(x-5)+' '+(y-3)+' L'+(x+5)+' '+(y-3)+' L'+x+' '+(y+4)+' Z',fill:'var(--ink)'},svg);hover(p,'<b>Skipped</b><br>'+(NAME[k[1]]||k[1])+' at '+fmt(k[0]))});
+    const mm=Math.floor(g.end/60)+':'+String(Math.round(g.end%60)).padStart(2,'0');
+    el('text',{x:R+50,y:y+16,class:'ax',style:'fill:var(--ink-2)'},svg,mm+' · '+META[g.id]);
+  });
+})();
+
+/* ---------- chart 2: outcomes ---------- */
+(function(){
+  const svg=document.getElementById('c2');
+  const W=560,L=170,R=390,maxB=7,rowH=30,top=8,H=top+OUT.length*rowH+24;
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.style.minWidth='460px';
+  const sx=v=>L+(R-L)*v/maxB;
+  for(let v=0;v<=maxB;v++){const x=sx(v);el('line',{x1:x,x2:x,y1:top,y2:H-20,stroke:'var(--line)'},svg);el('text',{x:x,y:H-6,'text-anchor':'middle',class:'ax'},svg,v)}
+  el('text',{x:R+18,y:top+2,class:'ax'},svg,'');
+  OUT.forEach((o,i)=>{
+    const y=top+i*rowH+6;
+    el('text',{x:L-10,y:y+13,'text-anchor':'end',class:'lbl'},svg,o.n);
+    let x=sx(0);
+    if(o.done){const w=sx(o.done)-sx(0);const r=el('rect',{x:x,y:y,width:w-1,height:18,rx:3,fill:'var(--c-ex)'},svg);hover(r,'<b>'+o.n+'</b><br>'+o.done+' finished blocks');x+=w}
+    if(o.skip){const w=sx(o.skip)-sx(0);const r=el('rect',{x:x+1,y:y,width:w-1,height:18,rx:3,fill:'var(--c-cal)'},svg);hover(r,'<b>'+o.n+'</b><br>'+o.skip+' skipped blocks'+(o.extra?' ('+o.extra+')':''));x+=w}
+    const rate=o.reps?Math.round(100*o.ok/o.reps)+'% ('+o.ok+'/'+o.reps+' reps)':'no reps'+(o.extra?' · '+o.extra:'');
+    el('text',{x:Math.max(x,sx(0))+8,y:y+13,class:'val'},svg,rate);
+  });
+})();
+
+/* ---------- chart 3: hints ---------- */
+(function(){
+  const svg=document.getElementById('c3');
+  const D=[{g:'Hints during rep',l:'0',n:39,p:90},{g:'Hints during rep',l:'1',n:21,p:57},{g:'Hints during rep',l:'2+',n:7,p:43},{g:'Compensation',l:'none',n:54,p:76},{g:'Compensation',l:'flagged',n:13,p:69}];
+  const W=520,top=18,bot=62,H=260,L=40,R=510;
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.style.minWidth='420px';
+  const sy=v=>H-bot-(H-bot-top)*v/100;
+  [0,25,50,75,100].forEach(v=>{el('line',{x1:L,x2:R,y1:sy(v),y2:sy(v),stroke:v?'var(--line)':'var(--axis)'},svg);el('text',{x:L-8,y:sy(v)+4,'text-anchor':'end',class:'ax'},svg,v+'%')});
+  const xs=[95,175,255,375,455];
+  D.forEach((d,i)=>{
+    const x=xs[i],y=sy(d.p);
+    const r=el('path',{d:'M'+(x-12)+' '+sy(0)+' V'+(y+4)+' Q'+(x-12)+' '+y+' '+(x-8)+' '+y+' H'+(x+8)+' Q'+(x+12)+' '+y+' '+(x+12)+' '+(y+4)+' V'+sy(0)+' Z',fill:'var(--c-ex)'},svg);
+    hover(r,'<b>'+d.g+': '+d.l+'</b><br>'+d.p+'% successful · '+d.n+' reps');
+    el('text',{x:x,y:y-6,'text-anchor':'middle',class:'val'},svg,d.p+'%');
+    el('text',{x:x,y:sy(0)+16,'text-anchor':'middle',class:'lbl'},svg,d.l);
+    el('text',{x:x,y:sy(0)+30,'text-anchor':'middle',class:'ax'},svg,'n='+d.n);
+  });
+  el('text',{x:175,y:H-8,'text-anchor':'middle',class:'ax',style:'fill:var(--ink-2)'},svg,'Coach hints in the rep');
+  el('text',{x:415,y:H-8,'text-anchor':'middle',class:'ax',style:'fill:var(--ink-2)'},svg,'Compensation');
+  el('line',{x1:315,x2:315,y1:top,y2:H-bot+34,stroke:'var(--line)'},svg);
+})();
+
+/* ---------- chart 4: tracking ---------- */
+(function(){
+  const svg=document.getElementById('c4');
+  const W=560,top=26,rowH=30,H=top+TRK.length*rowH+26,L=74,R=330,L2=380,R2=540,maxA=35;
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.style.minWidth='460px';
+  const sx=v=>L+(R-L)*v/100, sx2=v=>L2+(R2-L2)*v/maxA;
+  [0,25,50,75,100].forEach(v=>{el('line',{x1:sx(v),x2:sx(v),y1:top,y2:H-20,stroke:'var(--line)'},svg);el('text',{x:sx(v),y:H-6,'text-anchor':'middle',class:'ax'},svg,v+'%')});
+  [0,10,20,30].forEach(v=>{el('line',{x1:sx2(v),x2:sx2(v),y1:top,y2:H-20,stroke:'var(--line)'},svg);el('text',{x:sx2(v),y:H-6,'text-anchor':'middle',class:'ax'},svg,v)});
+  el('text',{x:L,y:12,class:'ax',style:'fill:var(--ink-2)'},svg,'Affected hand detected (% of frames)');
+  el('text',{x:L2,y:12,class:'ax',style:'fill:var(--ink-2)'},svg,'Alerts per exercise-minute');
+  TRK.forEach((t,i)=>{
+    const y=top+i*rowH+14;
+    el('text',{x:0,y:y+4,class:'lbl'},svg,'Guest '+t.id);
+    el('line',{x1:sx(Math.min(t.cal,t.ex)),x2:sx(Math.max(t.cal,t.ex)),y1:y,y2:y,stroke:'var(--axis)','stroke-width':2},svg);
+    [['cal','--c-cal','Calibration'],['ex','--c-ex','Exercise']].forEach(([k,c,lab])=>{
+      const d=el('circle',{cx:sx(t[k]),cy:y,r:5.5,fill:'var('+c+')',stroke:'var(--surface)','stroke-width':2},svg);
+      hover(d,'<b>Guest '+t.id+' · '+lab+'</b><br>Affected hand detected in '+t[k]+'% of frames');
+    });
+    const w=sx2(t.apm)-sx2(0);
+    if(w>0){const r=el('rect',{x:sx2(0),y:y-8,width:w,height:16,rx:3,fill:'var(--muted)'},svg);hover(r,'<b>Guest '+t.id+'</b><br>'+t.apm+' alerts per exercise-minute<br>'+t.q)}
+    el('text',{x:sx2(t.apm)+6,y:y+4,class:'val'},svg,t.apm);
+  });
+})();
+
+/* ---------- chart 5: range strip ---------- */
+(function(){
+  const svg=document.getElementById('c5');
+  const EX=['bubble_pinch','finger_abduction','thumb_flexion','grip_release','grip_squeeze'];
+  const W=560,top=10,rowH=40,H=top+EX.length*rowH+26,L=130,R=545,lo=0.5,hi=1.5;
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.style.minWidth='460px';
+  const sx=v=>L+(R-L)*(v-lo)/(hi-lo);
+  [0.5,0.75,1,1.25,1.5].forEach(v=>{el('line',{x1:sx(v),x2:sx(v),y1:top,y2:H-20,stroke:v===1?'var(--ink-2)':'var(--line)','stroke-width':v===1?1.5:1},svg);el('text',{x:sx(v),y:H-6,'text-anchor':'middle',class:'ax'},svg,v.toFixed(2))});
+  EX.forEach((e,i)=>{
+    const y=top+i*rowH+rowH/2;
+    el('text',{x:L-12,y:y+4,'text-anchor':'end',class:'lbl'},svg,NAME[e]);
+    const rs=REPS.filter(r=>r[0]===e).sort((a,b)=>(a[3]===b[3])?0:(a[3]?-1:1));
+    rs.forEach((r,j)=>{
+      const jit=((j*37)%9-4)*2.2;
+      const d=el('circle',{cx:sx(r[2]),cy:y+jit,r:5,fill:r[3]?'var(--c-ex)':'var(--c-cal)',stroke:'var(--surface)','stroke-width':2},svg);
+      hover(d,'<b>Guest '+r[1]+' · '+NAME[e]+'</b><br>Range '+r[2].toFixed(2)+' of calibrated max<br>'+(r[3]?'Successful':'Failed')+' · '+r[4]+' hint'+(r[4]===1?'':'s'));
+    });
+  });
+  el('text',{x:sx(1)+5,y:top+8,class:'ax',style:'fill:var(--ink-2)'},svg,'calibrated max');
+})();
+})();
+</script>
+
+</body></html>
